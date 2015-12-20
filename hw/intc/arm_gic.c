@@ -182,7 +182,7 @@ static void gic_set_irq(void *opaque, int irq, int level)
         return;
     }
 
-    if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+    if (s->revision == REV_11MPCORE) {
         gic_set_irq_11mpcore(s, irq, level, cm, target);
     } else {
         gic_set_irq_generic(s, irq, level, cm, target);
@@ -333,7 +333,7 @@ uint32_t gic_acknowledge_irq(GICState *s, int cpu, MemTxAttrs attrs)
         return 1023;
     }
 
-    if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+    if (s->revision == REV_11MPCORE) {
         /* Clear pending flags for both level and edge triggered interrupts.
          * Level triggered IRQs will be reasserted once they become inactive.
          */
@@ -512,7 +512,7 @@ void gic_complete_irq(GICState *s, int cpu, int irq, MemTxAttrs attrs)
         return; /* No active IRQ.  */
     }
 
-    if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+    if (s->revision == REV_11MPCORE) {
         /* Mark level triggered interrupts as pending if they are still
            raised.  */
         if (!GIC_TEST_EDGE_TRIGGER(irq) && GIC_TEST_ENABLED(irq, cm)
@@ -670,7 +670,7 @@ static uint32_t gic_dist_readb(void *opaque, hwaddr offset, MemTxAttrs attrs)
     } else if (offset < 0xf10) {
         goto bad_reg;
     } else if (offset < 0xf30) {
-        if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+        if (s->revision == REV_11MPCORE) {
             goto bad_reg;
         }
 
@@ -881,7 +881,7 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
         if (irq < GIC_NR_SGIS)
             value |= 0xaa;
         for (i = 0; i < 4; i++) {
-            if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+            if (s->revision == REV_11MPCORE) {
                 if (value & (1 << (i * 2))) {
                     GIC_SET_MODEL(irq + i);
                 } else {
@@ -899,7 +899,7 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
         goto bad_reg;
     } else if (offset < 0xf20) {
         /* GICD_CPENDSGIRn */
-        if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+        if (s->revision == REV_11MPCORE) {
             goto bad_reg;
         }
         irq = (offset - 0xf10);
@@ -910,7 +910,7 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
         }
     } else if (offset < 0xf30) {
         /* GICD_SPENDSGIRn */
-        if (s->revision == REV_11MPCORE || s->revision == REV_NVIC) {
+        if (s->revision == REV_11MPCORE) {
             goto bad_reg;
         }
         irq = (offset - 0xf20);

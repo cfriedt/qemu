@@ -5362,25 +5362,77 @@ static uint32_t v7m_pop(CPUARMState *env)
 }
 
 /* Switch to V7M main or process stack pointer.  */
-static void switch_v7m_sp(CPUARMState *env, int process)
+static void switch_v7m_sp(CPUARMState *env, bool process)
 {
     uint32_t tmp;
-    if (env->v7m.current_sp != process) {
+    if (!!(env->v7m.control & 2) != process) {
         tmp = env->v7m.other_sp;
         env->v7m.other_sp = env->regs[13];
         env->regs[13] = tmp;
-        env->v7m.current_sp = process;
+        env->v7m.control = (env->v7m.control & ~2) | (process ? 2 : 0);
     }
 }
 
 static void do_v7m_exception_exit(CPUARMState *env)
 {
+    unsigned ufault = 0;
     uint32_t type;
     uint32_t xpsr;
 
-    type = env->regs[15];
-    if (env->v7m.exception != 0)
-        armv7m_nvic_complete_irq(env->nvic, env->v7m.exception);
+    if (env->v7m.exception == 0) {
+        hw_error("Return from exception w/o active exception.  Logic error.");
+    }
+
+    if (env->v7m.exception != ARMV7M_EXCP_NMI) {
+        /* Auto-clear FAULTMASK on return from other than NMI */
+        env->daif &= ~PSTATE_F;
+    }
+
+    if (armv7m_nvic_complete_irq(env->nvic, env->v7m.exception)) {
+        qemu_log_mask(LOG_GUEST_ERROR, "Requesting return from exception "
+                      "from inactive exception %d\n",
+                      env->v7m.exception);
+        ufault = 1;
+    }
+    env->v7m.exception = -42; /* spoil, will be unstacked below */
+    env->v7m.exception_prio = armv7m_nvic_get_active_prio(env->nvic);
+
+    type = env->regs[15] & 0xf;
+    /* QEMU seems to clear the LSB at some point. */
+    type |= 1;
+
+    switch (type) {
+    case 0x1: /* Return to Handler mode */
+        if (env->v7m.exception_prio == 0x100) {
+            qemu_log_mask(LOG_GUEST_ERROR, "Requesting return from exception "
+                          "to Handler mode not allowed at base level of "
+                          "activation");
+            ufault = 1;
+        }
+        break;
+    case 0x9: /* Return to Thread mode w/ Main stack */
+    case 0xd: /* Return to Thread mode w/ Process stack */
+        if ((env->v7m.exception_prio != 0x100) && !(env->v7m.ccr & 1)) {
+            /* Attempt to return to Thread mode
+             * from nested handler while NONBASETHRDENA not set.
+             */
+            qemu_log_mask(LOG_GUEST_ERROR, "Nested exception return to %d w/"
+                          " Thread mode while NONBASETHRDENA not set\n",
+                          env->v7m.exception);
+            ufault = 1;
+        }
+        break;
+    default:
+        qemu_log_mask(LOG_GUEST_ERROR, "Exception return w/ reserved code"
+                                       " %02x\n", (unsigned)type);
+        ufault = 1;
+    }
+
+    /* TODO? if ufault==1 ARM calls for entering exception handler
+     * directly w/o popping stack.
+     * We pop anyway since the active UsageFault will push on entry
+     * which should happen before execution resumes?
+     */
 
     /* Switch to the target stack.  */
     switch_v7m_sp(env, (type & 4) != 0);
@@ -5404,14 +5456,65 @@ static void do_v7m_exception_exit(CPUARMState *env)
     }
     xpsr = v7m_pop(env);
     xpsr_write(env, xpsr, 0xfffffdff);
+
+    assert(env->v7m.exception != -42);
+
     /* Undo stack alignment.  */
     if (xpsr & 0x200)
         env->regs[13] |= 4;
-    /* ??? The exception return type specifies Thread/Handler mode.  However
-       this is also implied by the xPSR value. Not sure what to do
-       if there is a mismatch.  */
-    /* ??? Likewise for mismatches between the CONTROL register and the stack
-       pointer.  */
+
+    if (!ufault) {
+        /* consistency check between NVIC and guest stack */
+        if (env->v7m.exception == 0 && env->v7m.exception_prio != 0x100) {
+            ufault = 1;
+            qemu_log_mask(LOG_GUEST_ERROR, "Can't Unstacked to thread mode "
+                          "with active exception\n");
+            env->v7m.exception_prio = 0x100;
+
+        } else if (env->v7m.exception != 0 &&
+                   !armv7m_nvic_is_active(env->nvic, env->v7m.exception))
+        {
+            ufault = 1;
+            qemu_log_mask(LOG_GUEST_ERROR, "Unstacked exception %d is not "
+                          "active\n", env->v7m.exception);
+        } else  if (env->v7m.exception != 0
+                    && env->v7m.exception_prio == 0x100) {
+            hw_error("logic error at exception exit\n");
+        }
+        /* ARM calls for PushStack() here, which should happen
+         * went we return with a pending exception
+         */
+    }
+
+    if (ufault) {
+        armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE);
+        env->v7m.cfsr |= 1<<18; /* INVPC */
+    }
+
+    /* Ensure that priority is consistent.  Clear for Thread mode
+     * and set for Handler mode
+     */
+    assert((env->v7m.exception == 0 && env->v7m.exception_prio > 0xff)
+           || (env->v7m.exception != 0 && env->v7m.exception_prio <= 0xff));
+}
+
+static
+uint32_t arm_v7m_load_vector(ARMCPU *cpu)
+
+{
+    CPUState *cs = &cpu->parent_obj;
+    CPUARMState *env = &cpu->env;
+    MemTxResult result;
+    hwaddr vec = env->v7m.vecbase + env->v7m.exception * 4;
+    uint32_t addr;
+
+    addr = address_space_ldl(cs->as, vec,
+                             MEMTXATTRS_UNSPECIFIED, &result);
+    if (result != MEMTX_OK) {
+        cpu_abort(cs, "Failed to read from exception vector table "
+                  "entry %08x\n", (unsigned)vec);
+    }
+    return addr;
 }
 
 void arm_v7m_cpu_do_interrupt(CPUState *cs)
@@ -5425,30 +5528,54 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     arm_log_exception(cs->exception_index);
 
     lr = 0xfffffff1;
-    if (env->v7m.current_sp)
+    if (env->v7m.control & 2)
         lr |= 4;
     if (env->v7m.exception == 0)
         lr |= 8;
 
     /* For exceptions we just mark as pending on the NVIC, and let that
        handle it.  */
-    /* TODO: Need to escalate if the current priority is higher than the
-       one we're raising.  */
     switch (cs->exception_index) {
     case EXCP_UDEF:
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE);
-        return;
+        env->v7m.cfsr |= 1<<16; /* UNDEFINSTR */
+        break;
     case EXCP_SWI:
         /* The PC already points to the next instruction.  */
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_SVC);
-        return;
+        break;
     case EXCP_PREFETCH_ABORT:
     case EXCP_DATA_ABORT:
-        /* TODO: if we implemented the MPU registers, this is where we
-         * should set the MMFAR, etc from exception.fsr and exception.vaddress.
-         */
-        armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_MEM);
-        return;
+        switch (env->exception.fsr & 0xf) {
+        case 0x8: /* External Abort */
+            switch (cs->exception_index) {
+            case EXCP_PREFETCH_ABORT:
+                env->v7m.cfsr |= (1<<(8+1)); /* PRECISERR */
+                break;
+            case EXCP_DATA_ABORT:
+                env->v7m.cfsr |= (1<<(8+0)); /* IBUSERR */
+                break;
+            }
+            armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_BUS);
+            env->v7m.bfar = env->exception.vaddress;
+            env->v7m.cfsr |= (1<<(8+7)); /* BFARVALID */
+            break;
+        case 0xd: /* Permission fault */
+        default:
+            switch (cs->exception_index) {
+            case EXCP_PREFETCH_ABORT:
+                env->v7m.cfsr |= (1<<0); /* IACCVIOL */
+                break;
+            case EXCP_DATA_ABORT:
+                env->v7m.cfsr |= (1<<1); /* DACCVIOL */
+                break;
+            }
+            armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_MEM);
+            env->v7m.mmfar = env->exception.vaddress;
+            env->v7m.cfsr |= (1<<7); /* MMARVALID */
+            break;
+        }
+        break;
     case EXCP_BKPT:
         if (semihosting_enabled()) {
             int nr;
@@ -5465,7 +5592,6 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_DEBUG);
         return;
     case EXCP_IRQ:
-        env->v7m.exception = armv7m_nvic_acknowledge_irq(env->nvic);
         break;
     case EXCP_EXCEPTION_EXIT:
         do_v7m_exception_exit(env);
@@ -5475,10 +5601,12 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
         return; /* Never happens.  Keep compiler happy.  */
     }
 
-    /* Align stack pointer.  */
-    /* ??? Should only do this if Configuration Control Register
-       STACKALIGN bit is set.  */
-    if (env->regs[13] & 4) {
+    armv7m_nvic_acknowledge_irq(env->nvic);
+
+    qemu_log_mask(CPU_LOG_INT, "... as %d\n", env->v7m.exception);
+
+    /* Align stack pointer (STACKALIGN)  */
+    if ((env->regs[13] & 4) && (env->v7m.ccr & (1<<9))) {
         env->regs[13] -= 4;
         xpsr |= 0x200;
     }
@@ -5495,7 +5623,7 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     /* Clear IT bits */
     env->condexec_bits = 0;
     env->regs[14] = lr;
-    addr = ldl_phys(cs->as, env->v7m.vecbase + env->v7m.exception * 4);
+    addr = arm_v7m_load_vector(cpu);
     env->regs[15] = addr & 0xfffffffe;
     env->thumb = addr & 1;
 }
@@ -5954,6 +6082,12 @@ static inline bool regime_translation_disabled(CPUARMState *env,
 {
     if (mmu_idx == ARMMMUIdx_S2NS) {
         return (env->cp15.hcr_el2 & HCR_VM) == 0;
+    }
+    if (IS_M(env) && !env->v7m.mpu_hfnmiena &&
+            ((env->v7m.exception > 0 && env->v7m.exception <= 3)
+             || (env->daif & PSTATE_F)))
+    {
+        return 1;
     }
     return (regime_sctlr(env, mmu_idx) & SCTLR_M) == 0;
 }
@@ -6959,16 +7093,35 @@ static inline void get_phys_addr_pmsav7_default(CPUARMState *env,
                                                 ARMMMUIdx mmu_idx,
                                                 int32_t address, int *prot)
 {
-    *prot = PAGE_READ | PAGE_WRITE;
-    switch (address) {
-    case 0xF0000000 ... 0xFFFFFFFF:
-        if (regime_sctlr(env, mmu_idx) & SCTLR_V) { /* hivecs execing is ok */
+    if (!IS_M(env)) {
+        *prot = PAGE_READ | PAGE_WRITE;
+        switch (address) {
+        case 0xF0000000 ... 0xFFFFFFFF:
+            if (regime_sctlr(env, mmu_idx) & SCTLR_V) {
+                /* hivecs execing is ok */
+                *prot |= PAGE_EXEC;
+            }
+            break;
+        case 0x00000000 ... 0x7FFFFFFF:
             *prot |= PAGE_EXEC;
+            break;
         }
-        break;
-    case 0x00000000 ... 0x7FFFFFFF:
-        *prot |= PAGE_EXEC;
-        break;
+    } else {
+        /* ARM specfies XN (PAGE_EXEC) but leaves R/W to implementation.
+         * Mark ROM as read only since writes would otherwise be ignored.
+         */
+        switch (address) {
+        case 0 ... 0x1fffffff: /* ROM */
+            *prot = PAGE_READ | PAGE_EXEC;
+            break;
+        case 0x20000000 ... 0x3fffffff:  /* SRAM */
+        case 0x60000000 ... 0x7fffffff: /* RAM */
+        case 0x80000000 ... 0x9fffffff: /* RAM */
+            *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+            break;
+        default: /* Peripheral, 2x Device, and System */
+            *prot = PAGE_READ | PAGE_WRITE;
+        }
     }
 
 }
@@ -6983,6 +7136,15 @@ static bool get_phys_addr_pmsav7(CPUARMState *env, uint32_t address,
 
     *phys_ptr = address;
     *prot = 0;
+
+    /* Magic exception codes returns always pass through the MPU
+     * to be trapped later in arm_v7m_unassigned_access()
+     */
+    if (IS_M(env) && env->v7m.exception != 0 && address >= 0xfffffff0) {
+        *prot = PAGE_EXEC;
+        *fsr = 0;
+        return false;
+    }
 
     if (regime_translation_disabled(env, mmu_idx)) { /* MPU disabled */
         get_phys_addr_pmsav7_default(env, mmu_idx, address, prot);
@@ -7007,7 +7169,7 @@ static bool get_phys_addr_pmsav7(CPUARMState *env, uint32_t address,
 
             if (base & rmask) {
                 qemu_log_mask(LOG_GUEST_ERROR, "DRBAR %" PRIx32 " misaligned "
-                              "to DRSR region size, mask = %" PRIx32,
+                              "to DRSR region size, mask = %" PRIx32 "\n",
                               base, rmask);
                 continue;
             }
@@ -7045,9 +7207,9 @@ static bool get_phys_addr_pmsav7(CPUARMState *env, uint32_t address,
                 }
             }
             if (rsize < TARGET_PAGE_BITS) {
-                qemu_log_mask(LOG_UNIMP, "No support for MPU (sub)region"
+                qemu_log_mask(LOG_UNIMP, "No support for MPU[%u] (sub)region "
                               "alignment of %" PRIu32 " bits. Minimum is %d\n",
-                              rsize, TARGET_PAGE_BITS);
+                              n, rsize, TARGET_PAGE_BITS);
                 continue;
             }
             if (srdis) {
@@ -7060,12 +7222,15 @@ static bool get_phys_addr_pmsav7(CPUARMState *env, uint32_t address,
             if (cpu->pmsav7_dregion &&
                 (is_user || !(regime_sctlr(env, mmu_idx) & SCTLR_BR))) {
                 /* background fault */
-                *fsr = 0;
+                *fsr = 0x00d; /* Permission fault */
+
+                qemu_log_mask(CPU_LOG_MMU, "Miss MPU\n");
                 return true;
             }
             get_phys_addr_pmsav7_default(env, mmu_idx, address, prot);
         } else { /* a MPU hit! */
             uint32_t ap = extract32(env->pmsav7.dracr[n], 8, 3);
+            qemu_log_mask(CPU_LOG_MMU, "Hit MPU %u AP %08x\n", n, (unsigned)ap);
 
             if (is_user) { /* User mode AP bit decoding */
                 switch (ap) {
@@ -7279,9 +7444,15 @@ static bool get_phys_addr(CPUARMState *env, target_ulong address,
      */
     if (arm_feature(env, ARM_FEATURE_MPU) &&
         arm_feature(env, ARM_FEATURE_V7)) {
+        bool ret;
         *page_size = TARGET_PAGE_SIZE;
-        return get_phys_addr_pmsav7(env, address, access_type, mmu_idx,
-                                    phys_ptr, prot, fsr);
+        ret = get_phys_addr_pmsav7(env, address, access_type, mmu_idx,
+                                   phys_ptr, prot, fsr);
+        qemu_log_mask(CPU_LOG_MMU, "TLB %08x mmu_idx=%u AC %u -> AC %u %s\n",
+                      (unsigned)address, mmu_idx, 1<<access_type, *prot,
+                      ret ? "Miss" : "Hit");
+
+        return ret;
     }
 
     if (regime_translation_disabled(env, mmu_idx)) {
@@ -7383,27 +7554,36 @@ uint32_t HELPER(get_r13_banked)(CPUARMState *env, uint32_t mode)
 
 uint32_t HELPER(v7m_mrs)(CPUARMState *env, uint32_t reg)
 {
-    ARMCPU *cpu = arm_env_get_cpu(env);
+    uint32_t mask;
+    unsigned el = arm_current_el(env);
+
+    /* First handle registers which unprivileged can read */
 
     switch (reg) {
-    case 0: /* APSR */
-        return xpsr_read(env) & 0xf8000000;
-    case 1: /* IAPSR */
-        return xpsr_read(env) & 0xf80001ff;
-    case 2: /* EAPSR */
-        return xpsr_read(env) & 0xff00fc00;
-    case 3: /* xPSR */
-        return xpsr_read(env) & 0xff00fdff;
-    case 5: /* IPSR */
-        return xpsr_read(env) & 0x000001ff;
-    case 6: /* EPSR */
-        return xpsr_read(env) & 0x0700fc00;
-    case 7: /* IEPSR */
-        return xpsr_read(env) & 0x0700edff;
+    case 0 ... 7: /* xPSR sub-fields */
+        mask = 0;
+        if ((reg & 1) && el) {
+            mask |= 0x000001ff; /* IPSR (unpriv. reads as zero) */
+        }
+        if (!(reg & 4)) {
+            mask |= 0xf8000000; /* APSR */
+        }
+        /* EPSR reads as zero */
+        return xpsr_read(env) & mask;
+        break;
+    case 20: /* CONTROL */
+        return env->v7m.control;
+    }
+
+    if (el == 0) {
+        return 0; /* unprivileged reads others as zero */
+    }
+
+    switch (reg) {
     case 8: /* MSP */
-        return env->v7m.current_sp ? env->v7m.other_sp : env->regs[13];
+        return env->v7m.control & 2 ? env->v7m.other_sp : env->regs[13];
     case 9: /* PSP */
-        return env->v7m.current_sp ? env->regs[13] : env->v7m.other_sp;
+        return env->v7m.control & 2 ? env->regs[13] : env->v7m.other_sp;
     case 16: /* PRIMASK */
         return (env->daif & PSTATE_I) != 0;
     case 17: /* BASEPRI */
@@ -7411,11 +7591,9 @@ uint32_t HELPER(v7m_mrs)(CPUARMState *env, uint32_t reg)
         return env->v7m.basepri;
     case 19: /* FAULTMASK */
         return (env->daif & PSTATE_F) != 0;
-    case 20: /* CONTROL */
-        return env->v7m.control;
     default:
-        /* ??? For debugging only.  */
-        cpu_abort(CPU(cpu), "Unimplemented system register read (%d)\n", reg);
+        qemu_log_mask(LOG_GUEST_ERROR, "Attempt to read unknown special"
+                                       " register %d\n", reg);
         return 0;
     }
 }
@@ -7424,36 +7602,26 @@ void HELPER(v7m_msr)(CPUARMState *env, uint32_t reg, uint32_t val)
 {
     ARMCPU *cpu = arm_env_get_cpu(env);
 
+    if (arm_current_el(env) == 0 && reg > 7) {
+        /* only xPSR sub-fields may be written by unprivileged */
+        return;
+    }
+
     switch (reg) {
-    case 0: /* APSR */
-        xpsr_write(env, val, 0xf8000000);
-        break;
-    case 1: /* IAPSR */
-        xpsr_write(env, val, 0xf8000000);
-        break;
-    case 2: /* EAPSR */
-        xpsr_write(env, val, 0xfe00fc00);
-        break;
-    case 3: /* xPSR */
-        xpsr_write(env, val, 0xfe00fc00);
-        break;
-    case 5: /* IPSR */
-        /* IPSR bits are readonly.  */
-        break;
-    case 6: /* EPSR */
-        xpsr_write(env, val, 0x0600fc00);
-        break;
-    case 7: /* IEPSR */
-        xpsr_write(env, val, 0x0600fc00);
+    case 0 ... 7: /* xPSR sub-fields */
+        /* only APSR is actually writable */
+        if (reg & 4) {
+            xpsr_write(env, val, 0xf8000000); /* APSR */
+        }
         break;
     case 8: /* MSP */
-        if (env->v7m.current_sp)
+        if (env->v7m.control & 2)
             env->v7m.other_sp = val;
         else
             env->regs[13] = val;
         break;
     case 9: /* PSP */
-        if (env->v7m.current_sp)
+        if (env->v7m.control & 2)
             env->regs[13] = val;
         else
             env->v7m.other_sp = val;
@@ -7466,10 +7634,10 @@ void HELPER(v7m_msr)(CPUARMState *env, uint32_t reg, uint32_t val)
         }
         break;
     case 17: /* BASEPRI */
-        env->v7m.basepri = val & 0xff;
+        env->v7m.basepri = val & cpu->v7m_priority_mask;
         break;
     case 18: /* BASEPRI_MAX */
-        val &= 0xff;
+        val &= cpu->v7m_priority_mask;
         if (val != 0 && (val < env->v7m.basepri || env->v7m.basepri == 0))
             env->v7m.basepri = val;
         break;
@@ -7481,12 +7649,12 @@ void HELPER(v7m_msr)(CPUARMState *env, uint32_t reg, uint32_t val)
         }
         break;
     case 20: /* CONTROL */
-        env->v7m.control = val & 3;
         switch_v7m_sp(env, (val & 2) != 0);
+        env->v7m.control = (env->v7m.control & ~1) | (val & 1);
         break;
     default:
-        /* ??? For debugging only.  */
-        cpu_abort(CPU(cpu), "Unimplemented system register write (%d)\n", reg);
+        qemu_log_mask(LOG_GUEST_ERROR, "Attempt to write unknown special"
+                                       " register %d\n", reg);
         return;
     }
 }

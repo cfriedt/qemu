@@ -144,58 +144,61 @@ static void armv7m_bitband_init(void)
 
     dev = qdev_create(NULL, TYPE_BITBAND);
     qdev_prop_set_uint32(dev, "base", 0x20000000);
+    object_property_add_child(qdev_get_machine(), "bitband22",
+                              &dev->parent_obj, &error_fatal);
     qdev_init_nofail(dev);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x22000000);
 
     dev = qdev_create(NULL, TYPE_BITBAND);
     qdev_prop_set_uint32(dev, "base", 0x40000000);
+    object_property_add_child(qdev_get_machine(), "bitband42",
+                              &dev->parent_obj, &error_fatal);
     qdev_init_nofail(dev);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x42000000);
 }
 
 /* Board init.  */
 
-static void armv7m_reset(void *opaque)
-{
-    ARMCPU *cpu = opaque;
-
-    cpu_reset(CPU(cpu));
-}
-
-/* Init CPU and memory for a v7-M based board.
-   mem_size is in bytes.
-   Returns the NVIC array.  */
-
-DeviceState *armv7m_init(MemoryRegion *system_memory, int mem_size, int num_irq,
-                      const char *kernel_filename, const char *cpu_model)
+void armv7m_init(const char *cpu_model)
 {
     ARMCPU *cpu;
     CPUARMState *env;
     DeviceState *nvic;
-    int image_size;
-    uint64_t entry;
-    uint64_t lowaddr;
     int big_endian;
-    MemoryRegion *hack = g_new(MemoryRegion, 1);
 
     if (cpu_model == NULL) {
-	cpu_model = "cortex-m3";
+	    cpu_model = "cortex-m3";
     }
-    cpu = cpu_arm_init(cpu_model);
+    cpu = ARM_CPU(cpu_generic_init_unrealized(TYPE_ARM_CPU, cpu_model));
     if (cpu == NULL) {
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
     env = &cpu->env;
 
+    object_property_add_child(qdev_get_machine(), "cpu[*]", OBJECT(cpu),
+                              &error_fatal);
+
     armv7m_bitband_init();
 
     nvic = qdev_create(NULL, "armv7m_nvic");
-    qdev_prop_set_uint32(nvic, "num-irq", num_irq);
+    object_property_add_child(qdev_get_machine(), "nvic", &nvic->parent_obj,
+                              &error_fatal);
     env->nvic = nvic;
-    qdev_init_nofail(nvic);
+
     sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 0,
                        qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
+}
+
+
+void armv7m_realize(int mem_size, const char *kernel_filename)
+{
+    ARMCPU *cpu = ARM_CPU(first_cpu);
+    DeviceState *nvic = DEVICE(object_resolve_path("/machine/nvic", NULL));
+    int image_size;
+    uint64_t entry;
+    uint64_t lowaddr;
+    int big_endian;
 
 #ifdef TARGET_WORDS_BIGENDIAN
     big_endian = 1;
@@ -221,15 +224,11 @@ DeviceState *armv7m_init(MemoryRegion *system_memory, int mem_size, int num_irq,
         }
     }
 
-    /* Hack to map an additional page of ram at the top of the address
-       space.  This stops qemu complaining about executing code outside RAM
-       when returning from an exception.  */
-    memory_region_init_ram(hack, NULL, "armv7m.hack", 0x1000, &error_fatal);
-    vmstate_register_ram_global(hack);
-    memory_region_add_subregion(system_memory, 0xfffff000, hack);
-
-    qemu_register_reset(armv7m_reset, cpu);
-    return nvic;
+    /* Realizing cpu calls cpu_reset(), which must have rom image
+     * already mapped to find the correct entry point.
+     */
+    qdev_init_nofail(DEVICE(cpu));
+    qdev_init_nofail(nvic);
 }
 
 static Property bitband_properties[] = {

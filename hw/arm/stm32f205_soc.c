@@ -87,8 +87,10 @@ static void stm32f205_soc_realize(DeviceState *dev_soc, Error **errp)
     vmstate_register_ram_global(sram);
     memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, sram);
 
-    nvic = armv7m_init(get_system_memory(), FLASH_SIZE, 96,
-                       s->kernel_filename, s->cpu_model);
+    armv7m_init(s->cpu_model);
+    nvic = DEVICE(object_resolve_path("/machine/nvic", NULL));
+    qdev_prop_set_uint32(nvic, "num-irq", 96);
+    armv7m_realize(FLASH_SIZE, s->kernel_filename);
 
     /* System configuration controller */
     syscfgdev = DEVICE(&s->syscfg);

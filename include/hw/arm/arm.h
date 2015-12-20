@@ -17,8 +17,8 @@
 #include "cpu.h"
 
 /* armv7m.c */
-DeviceState *armv7m_init(MemoryRegion *system_memory, int mem_size, int num_irq,
-                      const char *kernel_filename, const char *cpu_model);
+void armv7m_init(const char *cpu_model);
+void armv7m_realize(int mem_size, const char *kernel_filename);
 
 /*
  * struct used as a parameter of the arm_load_kernel machine init

@@ -173,7 +173,12 @@ static void arm_cpu_reset(CPUState *s)
         uint32_t initial_pc; /* Loaded from 0x4 */
         uint8_t *rom;
 
-        env->daif &= ~PSTATE_I;
+        env->v7m.exception_prio = env->v7m.pending_prio = 0x100;
+
+        env->v7m.ccr = 1<<9; /* STKALIGN */
+
+        env->daif &= ~(PSTATE_I|PSTATE_F);
+        env->ZF = 1;
         rom = rom_ptr(0);
         if (rom) {
             /* Address zero is covered by ROM which hasn't yet been
@@ -192,6 +197,7 @@ static void arm_cpu_reset(CPUState *s)
         }
 
         env->regs[13] = initial_msp & 0xFFFFFFFC;
+        env->regs[14] = 0xffffffff;
         env->regs[15] = initial_pc & ~1;
         env->thumb = initial_pc & 1;
     }
@@ -280,6 +286,25 @@ bool arm_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 }
 
 #if !defined(CONFIG_USER_ONLY) || !defined(TARGET_AARCH64)
+static void arm_v7m_unassigned_access(CPUState *cpu, hwaddr addr,
+                                      bool is_write, bool is_exec, int opaque,
+                                      unsigned size)
+{
+    ARMCPU *arm = ARM_CPU(cpu);
+    CPUARMState *env = &arm->env;
+
+    env->exception.vaddress = addr;
+    env->exception.fsr = is_write ? 0x808 : 0x8; /* Precise External Abort */
+    if (env->v7m.exception != 0 && addr >= 0xfffffff0 && !is_write) {
+        cpu->exception_index = EXCP_EXCEPTION_EXIT;
+    } else if (is_exec) {
+        cpu->exception_index = EXCP_PREFETCH_ABORT;
+    } else {
+        cpu->exception_index = EXCP_DATA_ABORT;
+    }
+    cpu_loop_exit(cpu);
+}
+
 static bool arm_v7m_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
 {
     CPUClass *cc = CPU_GET_CLASS(cs);
@@ -294,19 +319,8 @@ static bool arm_v7m_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
         cc->do_interrupt(cs);
         ret = true;
     }
-    /* ARMv7-M interrupt return works by loading a magic value
-     * into the PC.  On real hardware the load causes the
-     * return to occur.  The qemu implementation performs the
-     * jump normally, then does the exception return when the
-     * CPU tries to execute code at the magic address.
-     * This will cause the magic PC value to be pushed to
-     * the stack if an interrupt occurred at the wrong time.
-     * We avoid this by disabling interrupts when
-     * pc contains a magic address.
-     */
     if (interrupt_request & CPU_INTERRUPT_HARD
-        && !(env->daif & PSTATE_I)
-        && (env->regs[15] < 0xfffffff0)) {
+        && !(env->daif & PSTATE_I)) {
         cs->exception_index = EXCP_IRQ;
         cc->do_interrupt(cs);
         ret = true;
@@ -516,6 +530,9 @@ static Property arm_cpu_has_mpu_property =
 static Property arm_cpu_pmsav7_dregion_property =
             DEFINE_PROP_UINT32("pmsav7-dregion", ARMCPU, pmsav7_dregion, 16);
 
+static Property armv7m_priority_mask_property =
+        DEFINE_PROP_UINT8("priority-mask", ARMCPU, v7m_priority_mask, 0xff);
+
 static void arm_cpu_post_init(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
@@ -554,6 +571,10 @@ static void arm_cpu_post_init(Object *obj)
         }
     }
 
+    if (IS_M(&cpu->env) && arm_feature(&cpu->env, ARM_FEATURE_V7)) {
+        qdev_property_add_static(DEVICE(obj), &armv7m_priority_mask_property,
+                                 &error_abort);
+    }
 }
 
 static void arm_cpu_finalizefn(Object *obj)
@@ -889,6 +910,7 @@ static void cortex_m3_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_V7);
     set_feature(&cpu->env, ARM_FEATURE_M);
+    set_feature(&cpu->env, ARM_FEATURE_MPU);
     cpu->midr = 0x410fc231;
 }
 
@@ -898,6 +920,7 @@ static void cortex_m4_initfn(Object *obj)
 
     set_feature(&cpu->env, ARM_FEATURE_V7);
     set_feature(&cpu->env, ARM_FEATURE_M);
+    set_feature(&cpu->env, ARM_FEATURE_MPU);
     set_feature(&cpu->env, ARM_FEATURE_THUMB_DSP);
     cpu->midr = 0x410fc240; /* r0p0 */
 }
@@ -909,6 +932,7 @@ static void arm_v7m_class_init(ObjectClass *oc, void *data)
     cc->do_interrupt = arm_v7m_cpu_do_interrupt;
 #endif
 
+    cc->do_unassigned_access = arm_v7m_unassigned_access;
     cc->cpu_exec_interrupt = arm_v7m_cpu_exec_interrupt;
 }
 

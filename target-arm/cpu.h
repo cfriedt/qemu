@@ -396,8 +396,16 @@ typedef struct CPUARMState {
         uint32_t vecbase;
         uint32_t basepri;
         uint32_t control;
-        int current_sp;
+        uint32_t ccr; /* Configuration and Control */
+        uint32_t cfsr; /* Configurable Fault Status */
+        uint32_t hfsr; /* HardFault Status */
+        uint32_t mmfar; /* MemManage Fault Address */
+        uint32_t bfar; /* BusFault Address */
+        unsigned mpu_hfnmiena; /* MPU_CTRL not mappable into SCTLR */
         int exception;
+        int exception_prio;
+        unsigned pending;
+        int pending_prio;
     } v7m;
 
     /* Information associated with an exception about to be taken:
@@ -1031,9 +1039,12 @@ uint32_t arm_phys_excp_target_el(CPUState *cs, uint32_t excp_idx,
                                  uint32_t cur_el, bool secure);
 
 /* Interface between CPU and Interrupt controller.  */
+int armv7m_excp_running_prio(ARMCPU *cpu);
 void armv7m_nvic_set_pending(void *opaque, int irq);
-int armv7m_nvic_acknowledge_irq(void *opaque);
-void armv7m_nvic_complete_irq(void *opaque, int irq);
+bool armv7m_nvic_is_active(void *opaque, int irq);
+int armv7m_nvic_get_active_prio(void *opaque);
+void armv7m_nvic_acknowledge_irq(void *opaque);
+bool armv7m_nvic_complete_irq(void *opaque, int irq);
 
 /* Interface for defining coprocessor registers.
  * Registers are defined in tables of arm_cp_reginfo structs

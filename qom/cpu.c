@@ -42,6 +42,23 @@ bool cpu_exists(int64_t id)
 
 CPUState *cpu_generic_init(const char *typename, const char *cpu_model)
 {
+    CPUState *cpu = cpu_generic_init_unrealized(typename, cpu_model);
+    if (cpu) {
+        Error *err = NULL;
+        object_property_set_bool(OBJECT(cpu), true, "realized", &err);
+
+        if (err != NULL) {
+            error_report_err(err);
+            object_unref(OBJECT(cpu));
+            return NULL;
+        }
+    }
+    return cpu;
+}
+
+CPUState *cpu_generic_init_unrealized(const char *typename,
+                                      const char *cpu_model)
+{
     char *str, *name, *featurestr;
     CPUState *cpu;
     ObjectClass *oc;
@@ -63,13 +80,7 @@ CPUState *cpu_generic_init(const char *typename, const char *cpu_model)
     featurestr = strtok(NULL, ",");
     cc->parse_features(cpu, featurestr, &err);
     g_free(str);
-    if (err != NULL) {
-        goto out;
-    }
 
-    object_property_set_bool(OBJECT(cpu), true, "realized", &err);
-
-out:
     if (err != NULL) {
         error_report_err(err);
         object_unref(OBJECT(cpu));
