@@ -52,8 +52,36 @@ int arm_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
         }
         return gdb_get_reg32(mem_buf, 0);
     case 25:
+        if (IS_M(env)) {
+            /* xPSR */
+            return gdb_get_reg32(mem_buf, xpsr_read(env));
+        }
         /* CPSR */
         return gdb_get_reg32(mem_buf, cpsr_read(env));
+    }
+    if (IS_M(env)) {
+        switch( n ) {
+        case 26:
+            /* MSP */
+            return gdb_get_reg32(mem_buf, env->v7m.current_sp ?
+                env->v7m.other_sp : env->regs[13]);
+        case 27:
+            /* PSP */
+            return gdb_get_reg32(mem_buf, env->v7m.current_sp ?
+                env->regs[13] : env->v7m.other_sp );
+        case 28:
+            /* PRIMASK */
+            return gdb_get_reg8(mem_buf, (env->daif & PSTATE_I) != 0);
+        case 29:
+            /* CONTROL */
+            return gdb_get_reg8(mem_buf, env->v7m.control);
+        case 30:
+            /* BASEPRI */
+            return gdb_get_reg8(mem_buf, env->v7m.basepri);
+        case 31:
+            /* FAULTMASK */
+            return gdb_get_reg8(mem_buf, (env->daif & PSTATE_F) != 0);
+        }
     }
     /* Unknown register.  */
     return 0;
@@ -93,9 +121,58 @@ int arm_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
         }
         return 4;
     case 25:
+        if (IS_M(env)) {
+            /* xPSR */
+            xpsr_write(env, tmp, 0xffffffff);
+            return 4;
+        }
         /* CPSR */
         cpsr_write(env, tmp, 0xffffffff);
         return 4;
+    }
+    if (IS_M(env)) {
+        switch( n ) {
+        case 26:
+            /* MSP */
+            if ( env->v7m.current_sp ) {
+                env->v7m.other_sp = tmp;
+            } else {
+                env->regs[13] = tmp;
+            }
+            return 4;
+        case 27:
+            /* PSP */
+            if ( env->v7m.current_sp ) {
+                env->regs[13] = tmp;
+            } else {
+                env->v7m.other_sp = tmp;
+            }
+            return 4;
+        case 28:
+            /* PRIMASK */
+            if ( *mem_buf & PSTATE_I ) {
+                env->daif |= PSTATE_I;
+            } else {
+                env->daif &= ~PSTATE_I;
+            }
+            return 1;
+        case 29:
+            /* CONTROL */
+            env->v7m.control = *mem_buf & 0x7;
+            return 1;
+        case 30:
+            /* BASEPRI */
+            env->v7m.basepri = *mem_buf;
+            return 1;
+        case 31:
+            /* FAULTMASK */
+            if ( *mem_buf & PSTATE_F ) {
+                env->daif |= PSTATE_F;
+            } else {
+                env->daif &= ~PSTATE_F;
+            }
+            return 1;
+        }
     }
     /* Unknown register.  */
     return 0;

@@ -5581,7 +5581,7 @@ case "$target_name" in
   arm|armeb)
     TARGET_ARCH=arm
     bflt="yes"
-    gdb_xml_files="arm-core.xml arm-vfp.xml arm-vfp3.xml arm-neon.xml"
+    gdb_xml_files="arm-core.xml arm-vfp.xml arm-vfp3.xml arm-neon.xml arm-6m-profile.xml arm-7m-profile.xml"
   ;;
   aarch64)
     TARGET_BASE_ARCH=arm
