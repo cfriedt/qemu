@@ -63,11 +63,11 @@ int arm_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
         switch( n ) {
         case 26:
             /* MSP */
-            return gdb_get_reg32(mem_buf, env->v7m.current_sp ?
+            return gdb_get_reg32(mem_buf, !!(env->v7m.control & 2) ?
                 env->v7m.other_sp : env->regs[13]);
         case 27:
             /* PSP */
-            return gdb_get_reg32(mem_buf, env->v7m.current_sp ?
+            return gdb_get_reg32(mem_buf, !!(env->v7m.control & 2) ?
                 env->regs[13] : env->v7m.other_sp );
         case 28:
             /* PRIMASK */
@@ -134,7 +134,7 @@ int arm_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
         switch( n ) {
         case 26:
             /* MSP */
-            if ( env->v7m.current_sp ) {
+            if ( !!(env->v7m.control & 2) ) {
                 env->v7m.other_sp = tmp;
             } else {
                 env->regs[13] = tmp;
@@ -142,7 +142,7 @@ int arm_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
             return 4;
         case 27:
             /* PSP */
-            if ( env->v7m.current_sp ) {
+            if ( !!(env->v7m.control & 2) ) {
                 env->regs[13] = tmp;
             } else {
                 env->v7m.other_sp = tmp;
