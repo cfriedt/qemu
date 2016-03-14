@@ -108,6 +108,10 @@ struct pci_vmsvga_state_s {
 #define SVGA_VALUE_PORT         0x1
 #define SVGA_BIOS_PORT          0x2
 
+#define SVGA_MAX_PSEUDOCOLOR_DEPTH      8
+#define SVGA_MAX_PSEUDOCOLORS           (1 << SVGA_MAX_PSEUDOCOLOR_DEPTH)
+#define SVGA_NUM_PALETTE_REGS           (3 * SVGA_MAX_PSEUDOCOLORS)
+
 #define SVGA_VERSION_2
 
 #ifdef SVGA_VERSION_2
@@ -161,10 +165,45 @@ enum {
     SVGA_REG_MEM_REGS = 30,             /* Number of FIFO registers */
     SVGA_REG_NUM_DISPLAYS = 31,         /* Number of guest displays */
     SVGA_REG_PITCHLOCK = 32,            /* Fixed pitch for all modes */
+	SVGA_REG_IRQMASK = 33,              /* Interrupt mask */
+
+	/* Legacy multi-monitor support */
+	SVGA_REG_NUM_GUEST_DISPLAYS = 34,   /* Number of guest displays in X/Y direction */
+	SVGA_REG_DISPLAY_ID = 35,           /* Display ID for the following display attributes */
+	SVGA_REG_DISPLAY_IS_PRIMARY = 36,   /* Whether this is a primary display */
+	SVGA_REG_DISPLAY_POSITION_X = 37,   /* The display position x */
+	SVGA_REG_DISPLAY_POSITION_Y = 38,   /* The display position y */
+	SVGA_REG_DISPLAY_WIDTH = 39,        /* The display's width */
+	SVGA_REG_DISPLAY_HEIGHT = 40,       /* The display's height */
+
+	/* See "Guest memory regions" below. */
+	SVGA_REG_GMR_ID = 41,
+	SVGA_REG_GMR_DESCRIPTOR = 42,
+	SVGA_REG_GMR_MAX_IDS = 43,
+	SVGA_REG_GMR_MAX_DESCRIPTOR_LENGTH = 44,
+
+	SVGA_REG_TRACES = 45,               /* Enable trace-based updates even when FIFO is on */
+	SVGA_REG_GMRS_MAX_PAGES = 46,       /* Maximum number of 4KB pages for all GMRs */
+	SVGA_REG_MEMORY_SIZE = 47,          /* Total dedicated device memory excluding FIFO */
+	SVGA_REG_COMMAND_LOW = 48,          /* Lower 32 bits and submits commands */
+	SVGA_REG_COMMAND_HIGH = 49,         /* Upper 32 bits of command buffer PA */
+	SVGA_REG_MAX_PRIMARY_BOUNDING_BOX_MEM = 50,   /* Max primary memory */
+	SVGA_REG_SUGGESTED_GBOBJECT_MEM_SIZE_KB = 51, /* Sugested limit on mob mem */
+	SVGA_REG_DEV_CAP = 52,              /* Write dev cap index, read value */
+	SVGA_REG_CMD_PREPEND_LOW = 53,
+	SVGA_REG_CMD_PREPEND_HIGH = 54,
+	SVGA_REG_SCREENTARGET_MAX_WIDTH = 55,
+	SVGA_REG_SCREENTARGET_MAX_HEIGHT = 56,
+	SVGA_REG_MOB_MAX_SIZE = 57,
+	SVGA_REG_TOP = 58,                  /* Must be 1 more than the last register */
 
     SVGA_PALETTE_BASE = 1024,           /* Base of SVGA color map */
-    SVGA_PALETTE_END  = SVGA_PALETTE_BASE + 767,
-    SVGA_SCRATCH_BASE = SVGA_PALETTE_BASE + 768,
+	/* Next 768 (== 256*3) registers exist for colormap */
+	SVGA_SCRATCH_BASE = SVGA_PALETTE_BASE + SVGA_NUM_PALETTE_REGS,
+	                                    /* Base of scratch registers */
+	/* Next reg[SVGA_REG_SCRATCH_SIZE] registers exist for scratch usage:
+	   First 4 are reserved for VESA BIOS Extension; any remaining are for
+       the use of the current SVGA driver. */
 };
 
 #define SVGA_CAP_NONE                   0
@@ -921,7 +960,8 @@ static uint32_t vmsvga_value_read(void *opaque, uint32_t address)
     case SVGA_REG_MEM_REGS:
     case SVGA_REG_NUM_DISPLAYS:
     case SVGA_REG_PITCHLOCK:
-    case SVGA_PALETTE_BASE ... SVGA_PALETTE_END:
+    case SVGA_REG_TRACES:
+    case SVGA_PALETTE_BASE ... (SVGA_SCRATCH_BASE - 1):
         ret = 0;
         break;
 
@@ -1064,7 +1104,8 @@ static void vmsvga_value_write(void *opaque, uint32_t address, uint32_t value)
     case SVGA_REG_MEM_REGS:
     case SVGA_REG_NUM_DISPLAYS:
     case SVGA_REG_PITCHLOCK:
-    case SVGA_PALETTE_BASE ... SVGA_PALETTE_END:
+    case SVGA_REG_TRACES:
+    case SVGA_PALETTE_BASE ... (SVGA_SCRATCH_BASE - 1):
         break;
 
     default:
