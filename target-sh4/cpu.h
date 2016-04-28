@@ -30,6 +30,8 @@
 #define SH_CPU_SH7751  (1 << 3)
 #define SH_CPU_SH7751R (1 << 4)
 #define SH_CPU_SH7785  (1 << 5)
+#define SH_CPU_SH7785  (1 << 5)
+#define SH_CPU_SH7619  (1 << 6)
 #define SH_CPU_SH7750_ALL (SH_CPU_SH7750 | SH_CPU_SH7750S | SH_CPU_SH7750R)
 #define SH_CPU_SH7751_ALL (SH_CPU_SH7751 | SH_CPU_SH7751R)
 
@@ -133,8 +135,11 @@ typedef struct memory_content {
 } memory_content;
 
 typedef struct CPUSH4State {
+	// XXX: @CF See page 734 in rej09b0237_sh7619.pdf
+	// XXX: @CF "ID register", SDID, 16-bits in length, H'F8100214, H-UDI, access size 32 or 16 bits
+	// XXX: @CF SDID value for sh7619 is 0x0800c447
     uint32_t flags;		/* general execution flags */
-    uint32_t gregs[24];		/* general registers */
+    uint32_t gregs[24];		/* general registers */ // XXX: @CF SH2 only has 16 gregs
     float32 fregs[32];		/* floating point registers */
     uint32_t sr;                /* status register (with T split out) */
     uint32_t sr_m;              /* M bit of status register */
