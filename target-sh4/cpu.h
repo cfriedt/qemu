@@ -32,8 +32,11 @@
 #define SH_CPU_SH7785  (1 << 5)
 #define SH_CPU_SH7785  (1 << 5)
 #define SH_CPU_SH7619  (1 << 6)
+#define SH_CPU_J2      (1 << 7)
 #define SH_CPU_SH7750_ALL (SH_CPU_SH7750 | SH_CPU_SH7750S | SH_CPU_SH7750R)
 #define SH_CPU_SH7751_ALL (SH_CPU_SH7751 | SH_CPU_SH7751R)
+#define SH_CPU_SH2_ALL    (SH_CPU_SH7619)
+#define SH_CPU_JCORE_ALL  (SH_CPU_J2)
 
 #define CPUArchState struct CPUSH4State
 

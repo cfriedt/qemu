@@ -29,6 +29,8 @@
 #define TYPE_SH7785_CPU "sh7785-" TYPE_SUPERH_CPU
 // XXX: @CF: SH2 cpu class
 #define TYPE_SH7750R_CPU "sh7619-" TYPE_SUPERH_CPU
+// XXX: @CF: J2 cpu class
+#define TYPE_SH7750R_CPU "j2-" TYPE_SUPERH_CPU
 
 #define SUPERH_CPU_CLASS(klass) \
     OBJECT_CLASS_CHECK(SuperHCPUClass, (klass), TYPE_SUPERH_CPU)
