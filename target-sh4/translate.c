@@ -354,8 +354,9 @@ static inline void gen_store_fpr64 (TCGv_i64 t, int reg)
 
 static void _decode_opc(DisasContext * ctx)
 {
-	// XXX: @CF: CAS.L !!!
+	if ( ctx->opcode ) {
 
+	}
     /* This code tries to make movcal emulation sufficiently
        accurate for Linux purposes.  This instruction writes
        memory, and prior to that, always allocates a cache line.
@@ -512,6 +513,15 @@ static void _decode_opc(DisasContext * ctx)
 	return;
     case 0x2002:		/* mov.l Rm,@Rn */
         tcg_gen_qemu_st_i32(REG(B7_4), REG(B11_8), ctx->memidx, MO_TEUL);
+	return;
+	// XXX: @CF: Must check if core is J2!!
+    case 0x2003:		/* cas.l Rm,Rn,@R0 */
+//    	Rn→TEMP0
+//    	(R0)→ Rn
+//    	When Rn=Rm,1→T
+//    	TEMP0 → (R0)
+    	// REG(B7_4), REG(B11_8)
+        tcg_gen_qemu_st_i32(, ctx->memidx, MO_TEUL);
 	return;
     case 0x6000:		/* mov.b @Rm,Rn */
         tcg_gen_qemu_ld_i32(REG(B11_8), REG(B7_4), ctx->memidx, MO_SB);
