@@ -354,6 +354,8 @@ static inline void gen_store_fpr64 (TCGv_i64 t, int reg)
 
 static void _decode_opc(DisasContext * ctx)
 {
+	// XXX: @CF: CAS.L !!!
+
     /* This code tries to make movcal emulation sufficiently
        accurate for Linux purposes.  This instruction writes
        memory, and prior to that, always allocates a cache line.
