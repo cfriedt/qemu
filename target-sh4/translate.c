@@ -514,15 +514,27 @@ static void _decode_opc(DisasContext * ctx)
     case 0x2002:		/* mov.l Rm,@Rn */
         tcg_gen_qemu_st_i32(REG(B7_4), REG(B11_8), ctx->memidx, MO_TEUL);
 	return;
-	// XXX: @CF: Must check if core is J2!!
+	// XXX: @CF: CASL support in J2
     case 0x2003:		/* cas.l Rm,Rn,@R0 */
-//    	Rn→TEMP0
-//    	(R0)→ Rn
-//    	When Rn=Rm,1→T
-//    	TEMP0 → (R0)
-    	// REG(B7_4), REG(B11_8)
-        tcg_gen_qemu_st_i32(, ctx->memidx, MO_TEUL);
-	return;
+    {
+    	if (ctx->features & SH_FEATURE_CASL) {
+			TCGv t0 = tcg_temp_new();
+			TCGLabel *label = gen_new_label();
+			// Rn -> TEMP0
+			tcg_gen_mov_i32(t0, REG(B11_8));
+			// (R0) -> Rn
+			tcg_gen_qemu_ld_i32(REG(B11_8), REG( 0 ), ctx->memidx, MO_UL);
+			// When Rn=Rm,1 -> T
+			tcg_gen_setcond_i32(TCG_COND_EQ, cpu_sr_t, REG(B11_8), REG(B7_4));
+			tcg_gen_brcondi_i32(TCG_COND_EQ, cpu_sr_t, 0, label);
+			// TEMP0 -> (R0)
+			tcg_gen_qemu_st_i32(t0, REG( 0 ), ctx->memidx, MO_UL);
+			tcg_set_label(label);
+			tcg_temp_free(t0);
+			return;
+		}
+    	break;
+    }
     case 0x6000:		/* mov.b @Rm,Rn */
         tcg_gen_qemu_ld_i32(REG(B11_8), REG(B7_4), ctx->memidx, MO_SB);
 	return;

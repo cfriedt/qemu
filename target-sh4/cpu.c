@@ -160,6 +160,35 @@ SuperHCPU *cpu_sh4_init(const char *cpu_model)
     return SUPERH_CPU(cpu_generic_init(TYPE_SUPERH_CPU, cpu_model));
 }
 
+static void sh7619_cpu_initfn(Object *obj)
+{
+    SuperHCPU *cpu = SUPERH_CPU(obj);
+    CPUSH4State *env = &cpu->env;
+
+    env->id = SH_CPU_SH7619;
+    env->features = 0;
+}
+
+static void sh7619_class_init(ObjectClass *oc, void *data)
+{
+    SuperHCPUClass *scc = SUPERH_CPU_CLASS(oc);
+
+    scc->name = "SH7619";
+//    scc->pvr = 0x00050000;
+//    scc->prr = 0x00000100;
+//    scc->cvr = 0x00110000;
+    scc->pvr = 0; // not defined for SH7619
+    scc->prr = 0;
+    scc->cvr = 0;
+}
+
+static const TypeInfo sh7619_type_info = {
+    .name = TYPE_SH7619_CPU,
+    .parent = TYPE_SUPERH_CPU,
+    .class_init = sh7619_class_init,
+    .instance_init = sh7619_cpu_initfn,
+};
+
 static void sh7750r_cpu_initfn(Object *obj)
 {
     SuperHCPU *cpu = SUPERH_CPU(obj);
