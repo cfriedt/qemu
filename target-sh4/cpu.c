@@ -352,6 +352,7 @@ static const TypeInfo superh_cpu_type_info = {
 static void superh_cpu_register_types(void)
 {
     type_register_static(&superh_cpu_type_info);
+    type_register_static(&sh7619_type_info);
     type_register_static(&sh7750r_type_info);
     type_register_static(&sh7751r_type_info);
     type_register_static(&sh7785_type_info);
