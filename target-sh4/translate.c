@@ -529,7 +529,7 @@ static void _decode_opc(DisasContext * ctx)
 			tcg_gen_brcondi_i32(TCG_COND_EQ, cpu_sr_t, 0, label);
 			// TEMP0 -> (R0)
 			tcg_gen_qemu_st_i32(t0, REG( 0 ), ctx->memidx, MO_UL);
-			tcg_set_label(label);
+			gen_set_label(label);
 			tcg_temp_free(t0);
 			return;
 		}
