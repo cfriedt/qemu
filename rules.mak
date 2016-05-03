@@ -105,7 +105,7 @@ modules:
 	$(call LINK,$(filter %.o %.a %.mo, $^))
 
 %.a:
-ifeq ($(shell uname),Darwin)
+ifdef CONFIG_DARWIN
 	$(call quiet-command,rm -f $@ && libtool -static -o $@ $^,"  libtool    $(TARGET_DIR)$@")
 else
 	$(call quiet-command,rm -f $@ && $(AR) rcs $@ $^,"  AR    $(TARGET_DIR)$@")
