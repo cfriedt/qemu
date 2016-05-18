@@ -48,7 +48,7 @@ typedef struct DisasContext {
 #if defined(CONFIG_USER_ONLY)
 #define IS_USER(ctx) 1
 #else
-#define IS_USER(ctx) (!(ctx->flags & (1u << SR_MD)))
+#define IS_USER(ctx) ( HAS_SR_PRIVILEGED_MODE(ctx->features) ? !(ctx->flags & (1u << SR_MD)) : 0 )
 #endif
 
 enum {
@@ -181,7 +181,7 @@ void superh_cpu_dump_state(CPUState *cs, FILE *f,
     }
 }
 
-static void gen_read_sr(TCGv dst)
+static void gen_read_sr(DisasContext * ctx, TCGv dst)
 {
     TCGv t0 = tcg_temp_new();
     tcg_gen_shli_i32(t0, cpu_sr_q, SR_Q);
@@ -190,10 +190,30 @@ static void gen_read_sr(TCGv dst)
     tcg_gen_or_i32(dst, dst, t0);
     tcg_gen_shli_i32(t0, cpu_sr_t, SR_T);
     tcg_gen_or_i32(dst, cpu_sr, t0);
+
+#if 0
+    // XXX: @CF: this will be slow, but is the least disruptive way to change the way cpu_sr is dealt with rather than
+    // breaking out all bits and refactoring all of the code.
+    // XXX: @CF: actually, the status register should not even be a static variable in this file, it should be encapsulated
+    // within disasm ctx
+    if ( ! HAS_SR_PRIVILEGED_MODE( ctx->features ) ) {
+    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_MD) );
+    }
+    if ( ! HAS_SR_REGISTER_BANK( ctx->features ) ) {
+    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_RB) );
+    }
+    if ( ! HAS_SR_BLOCK_EXCEPTION( ctx->features ) ) {
+    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_BL) );
+    }
+    if ( ! HAS_SR_DISABLE_FPU( ctx->features ) ) {
+    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_FD) );
+    }
+#endif
+
     tcg_temp_free_i32(t0);
 }
 
-static void gen_write_sr(TCGv src)
+static void gen_write_sr(DisasContext * ctx, TCGv src)
 {
     tcg_gen_andi_i32(cpu_sr, src,
                      ~((1u << SR_Q) | (1u << SR_M) | (1u << SR_T)));
@@ -203,6 +223,25 @@ static void gen_write_sr(TCGv src)
     tcg_gen_andi_i32(cpu_sr_m, cpu_sr_m, 1);
     tcg_gen_shri_i32(cpu_sr_t, src, SR_T);
     tcg_gen_andi_i32(cpu_sr_t, cpu_sr_t, 1);
+
+#if 1
+    // XXX: @CF: this will be slow, but is the least disruptive way to change the way cpu_sr is dealt with rather than
+    // breaking out all bits and refactoring all of the code.
+    // XXX: @CF: actually, the status register should not even be a static variable in this file, it should be encapsulated
+    // within disasm ctx
+    if ( ! HAS_SR_PRIVILEGED_MODE( ctx->features ) ) {
+    	tcg_gen_andi_i32(cpu_sr, cpu_sr, ~(1 << SR_MD) );
+    }
+    if ( ! HAS_SR_REGISTER_BANK( ctx->features ) ) {
+    	tcg_gen_andi_i32(cpu_sr, cpu_sr, ~(1 << SR_RB) );
+    }
+    if ( ! HAS_SR_BLOCK_EXCEPTION( ctx->features ) ) {
+    	tcg_gen_andi_i32(cpu_sr, cpu_sr, ~(1 << SR_BL) );
+    }
+    if ( ! HAS_SR_DISABLE_FPU( ctx->features ) ) {
+    	tcg_gen_andi_i32(cpu_sr, cpu_sr, ~(1 << SR_FD) );
+    }
+#endif
 }
 
 static void gen_goto_tb(DisasContext * ctx, int n, target_ulong dest)
@@ -418,7 +457,7 @@ static void _decode_opc(DisasContext * ctx)
     case 0x002b:		/* rte */
 	CHECK_PRIVILEGED
 	CHECK_NOT_DELAY_SLOT
-        gen_write_sr(cpu_ssr);
+        gen_write_sr(ctx, cpu_ssr);
 	tcg_gen_mov_i32(cpu_delayed_pc, cpu_spc);
 	ctx->flags |= DELAY_SLOT;
 	ctx->delayed_pc = (uint32_t) - 1;
@@ -1402,7 +1441,7 @@ static void _decode_opc(DisasContext * ctx)
         {
             TCGv val = tcg_temp_new();
             tcg_gen_andi_i32(val, REG(B11_8), 0x700083f3);
-            gen_write_sr(val);
+            gen_write_sr(ctx, val);
             tcg_temp_free(val);
             ctx->bstate = BS_STOP;
         }
@@ -1413,7 +1452,7 @@ static void _decode_opc(DisasContext * ctx)
 	    TCGv val = tcg_temp_new();
             tcg_gen_qemu_ld_i32(val, REG(B11_8), ctx->memidx, MO_TESL);
             tcg_gen_andi_i32(val, val, 0x700083f3);
-            gen_write_sr(val);
+            gen_write_sr(ctx, val);
 	    tcg_temp_free(val);
 	    tcg_gen_addi_i32(REG(B11_8), REG(B11_8), 4);
 	    ctx->bstate = BS_STOP;
@@ -1421,7 +1460,7 @@ static void _decode_opc(DisasContext * ctx)
 	return;
     case 0x0002:		/* stc SR,Rn */
 	CHECK_PRIVILEGED
-        gen_read_sr(REG(B11_8));
+        gen_read_sr(ctx, REG(B11_8));
 	return;
     case 0x4003:		/* stc SR,@-Rn */
 	CHECK_PRIVILEGED
@@ -1429,7 +1468,7 @@ static void _decode_opc(DisasContext * ctx)
 	    TCGv addr = tcg_temp_new();
             TCGv val = tcg_temp_new();
 	    tcg_gen_subi_i32(addr, REG(B11_8), 4);
-            gen_read_sr(val);
+            gen_read_sr(ctx, val);
             tcg_gen_qemu_st_i32(val, addr, ctx->memidx, MO_TEUL);
 	    tcg_gen_mov_i32(REG(B11_8), addr);
             tcg_temp_free(val);

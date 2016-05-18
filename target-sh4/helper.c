@@ -415,6 +415,9 @@ static int get_physical_address(CPUSH4State * env, target_ulong * physical,
                                 int *prot, target_ulong address,
                                 int rw, int access_type)
 {
+	if ( !HAS_SR_PRIVILEGED_MODE(env->features) ) {
+		goto skip_unauth_access;
+	}
     /* P1, P2 and P4 areas do not use translation */
     if ((address >= 0x80000000 && address < 0xc0000000) ||
 	address >= 0xe0000000) {
@@ -429,6 +432,7 @@ static int get_physical_address(CPUSH4State * env, target_ulong * physical,
 	    else
 		return MMU_IADDR_ERROR;
 	}
+skip_unauth_access:
 	if (address >= 0x80000000 && address < 0xc0000000) {
 	    /* Mask upper 3 bits for P1 and P2 areas */
 	    *physical = address & 0x1fffffff;

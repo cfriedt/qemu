@@ -127,10 +127,19 @@ typedef struct tlb_t {
 #define TARGET_INSN_START_EXTRA_WORDS 1
 
 enum sh_features {
-    SH_FEATURE_SH4A = 1,
-    SH_FEATURE_BCR3_AND_BCR4 = 2,
-	SH_FEATURE_CASL = 4,
+    SH_FEATURE_SH4A               = ( 1 << 0 ),
+    SH_FEATURE_BCR3_AND_BCR4      = ( 1 << 1 ),
+	SH_FEATURE_CASL               = ( 1 << 2 ), // J-Core, Compare and Swap (for atomics)
+	SH_FEATURE_SR_PRIVILEGED_MODE = ( 1 << 3 ), // MD bit in Status Register
+    SH_FEATURE_SR_REGISTER_BANK   = ( 1 << 4 ), // RB bit in Status Register
+    SH_FEATURE_SR_BLOCK_EXCEPTION = ( 1 << 5 ), // BL bit in Status Register
+    SH_FEATURE_SR_DISABLE_FPU     = ( 1 << 6 ), // FD bit in Status Register
 };
+
+#define HAS_SR_PRIVILEGED_MODE(f) (f & SH_FEATURE_SR_PRIVILEGED_MODE)
+#define HAS_SR_REGISTER_BANK(f)   (f & SH_FEATURE_SR_REGISTER_BANK)
+#define HAS_SR_BLOCK_EXCEPTION(f) (f & SH_FEATURE_SR_BLOCK_EXCEPTION)
+#define HAS_SR_DISABLE_FPU(f)     (f & SH_FEATURE_SR_DISABLE_FPU)
 
 typedef struct memory_content {
     uint32_t address;
