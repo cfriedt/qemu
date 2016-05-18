@@ -73,7 +73,7 @@ static void mimasv2_init(MachineState *machine)
     memory_region_init_ram(sram, NULL, "mimasv2.sram", SRAM_SIZE, &error_fatal);
     vmstate_register_ram_global(sram);
     memory_region_add_subregion(sysmem, SRAM_BASE, sram);
-    memory_region_init_ram(&dram[0], NULL, "mimasv2.sdram", DRAM_SIZE,
+    memory_region_init_ram(&dram[0], NULL, "mimasv2.dram", DRAM_SIZE,
                            &error_fatal);
     vmstate_register_ram_global(&dram[0]);
     memory_region_add_subregion(sysmem, DRAM_BASE, &dram[0]);
