@@ -44,11 +44,11 @@
 #define BIOS_FILENAME "mimasv2_bios.bin"
 #define BIOS_ADDRESS 0xA0000000
 
-#define ROM_BASE 0x00000000
-#define ROM_SIZE 0x00008000
+#define SRAM_BASE 0x00000000
+#define SRAM_SIZE 0x00008000
 
-#define RAM_BASE    0x10000000
-#define RAM_SIZE    0x04000000
+#define DRAM_BASE    0x01000000
+#define DRAM_SIZE    0x04000000
 
 static void mimasv2_init(MachineState *machine)
 {
@@ -57,8 +57,8 @@ static void mimasv2_init(MachineState *machine)
     SuperHCPU *cpu;
     struct SH7750State *s;
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *rom = g_new(MemoryRegion, 1);
-    MemoryRegion *sdram = g_new(MemoryRegion, 1);
+    MemoryRegion *sram = g_new(MemoryRegion, 1);
+    MemoryRegion *dram = g_new(MemoryRegion, 1);
     
     if (!cpu_model)
         cpu_model = "any";
@@ -70,27 +70,26 @@ static void mimasv2_init(MachineState *machine)
     }
 
     /* Allocate memory space */
-    memory_region_init_ram(rom, NULL, "mimasv2.rom", ROM_SIZE, &error_fatal);
-    vmstate_register_ram_global(rom);
-    memory_region_set_readonly(rom, true);
-    memory_region_add_subregion(sysmem, ROM_BASE, rom);
-    memory_region_init_ram(&sdram[0], NULL, "mimasv2.sdram", RAM_SIZE,
+    memory_region_init_ram(sram, NULL, "mimasv2.sram", SRAM_SIZE, &error_fatal);
+    vmstate_register_ram_global(sram);
+    memory_region_add_subregion(sysmem, SRAM_BASE, sram);
+    memory_region_init_ram(&dram[0], NULL, "mimasv2.sdram", DRAM_SIZE,
                            &error_fatal);
-    vmstate_register_ram_global(&sdram[0]);
-    memory_region_add_subregion(sysmem, RAM_BASE, &sdram[0]);
+    vmstate_register_ram_global(&dram[0]);
+    memory_region_add_subregion(sysmem, DRAM_BASE, &dram[0]);
 
     if (bios_name == NULL) {
         bios_name = BIOS_FILENAME;
     }
-    ret = load_image_targphys(bios_name, ROM_BASE, ROM_SIZE);
+    ret = load_image_targphys(bios_name, SRAM_BASE, SRAM_SIZE);
     if (ret < 0 && !qtest_enabled()) {
         error_report("Could not load MimasV2 bios '%s'", bios_name);
         exit(1);
     }
 
     // XXX: @CF: read-in the initial program counter and initial stack pointer from ROM
-    cpu->env.pc = ntohl( *( (uint32_t *) rom_ptr( ROM_BASE ) ) );
-    cpu->env.gregs[ 15 ] = ntohl( *( (uint32_t *) rom_ptr( ROM_BASE + sizeof(long) ) ) );
+    cpu->env.pc = ntohl( *( (uint32_t *) rom_ptr( SRAM_BASE ) ) );
+    cpu->env.gregs[ 15 ] = ntohl( *( (uint32_t *) rom_ptr( SRAM_BASE + sizeof(long) ) ) );
     cpu->env.features |= SH_FEATURE_CASL;
 
     /* Register peripherals */
