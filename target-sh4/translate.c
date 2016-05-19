@@ -215,8 +215,7 @@ static void gen_read_sr(DisasContext * ctx, TCGv dst)
 
 static void gen_write_sr(DisasContext * ctx, TCGv src)
 {
-    tcg_gen_andi_i32(cpu_sr, src,
-                     ~((1u << SR_Q) | (1u << SR_M) | (1u << SR_T)));
+    tcg_gen_andi_i32(cpu_sr, src, 0x700083f3 );
     tcg_gen_shri_i32(cpu_sr_q, src, SR_Q);
     tcg_gen_andi_i32(cpu_sr_q, cpu_sr_q, 1);
     tcg_gen_shri_i32(cpu_sr_m, src, SR_M);
