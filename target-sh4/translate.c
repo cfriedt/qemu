@@ -1277,7 +1277,19 @@ static void _decode_opc(DisasContext * ctx)
 	}
 	return;
     case 0xc700:		/* mova @(disp,PC),R0 */
-	tcg_gen_movi_i32(REG(0), ((ctx->pc & 0xfffffffc) + 4 + B7_0 * 4) & ~3);
+    // SuperH RISC Engine SH-1/SH-2, Programming Manual, HITACHI, Sept 3, 1996,
+    // pp 129, "If this instruction is placed immediately after a delayed branch instruction, the PC must point to an address specified by (the starting address of the branch destination) + 2."
+    TCGV addr, isn;
+    addr = tcg_temp_new();
+    isn = tcg_temp_new();
+    tcg_gen_subi_i32(addr, addr, 2);
+    tcg_gen_qemu_ld_i32(isn, addr, ctx->memidx, MO_TESL);
+    if ( 1 ) {
+    } else {
+    	tcg_gen_movi_i32(REG(0), ((ctx->pc & 0xfffffffc) + 4 + B7_0 * 4) & ~3);
+    }
+    tcg_temp_free(isn);
+    tcg_temp_free(addr);
 	return;
     case 0xcb00:		/* or #imm,R0 */
 	tcg_gen_ori_i32(REG(0), REG(0), B7_0);
