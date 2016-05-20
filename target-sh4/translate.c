@@ -525,20 +525,19 @@ static void _decode_opc(DisasContext * ctx)
     {
     	if (ctx->features & SH_FEATURE_CASL) {
 			TCGv t0 = tcg_temp_new();
-			TCGLabel *label = gen_new_label();
 			// Rn -> TEMP0
 			tcg_gen_mov_i32(t0, REG(B11_8));
 			// (R0) -> Rn
-			tcg_gen_qemu_ld_i32(REG(B11_8), REG( 0 ), ctx->memidx, MO_UL);
+			tcg_gen_qemu_ld_i32(REG(B11_8), REG(0), ctx->memidx, MO_TEUL);
 			// When Rn=Rm,1 -> T
 			tcg_gen_setcond_i32(TCG_COND_EQ, cpu_sr_t, REG(B11_8), REG(B7_4));
-			tcg_gen_brcondi_i32(TCG_COND_EQ, cpu_sr_t, 0, label);
+			// XXX: @CF: Slower than branching, but branch / label was not working, for some reason
+			tcg_gen_movcond_i32(TCG_COND_EQ, t0, REG(B11_8), REG(B7_4), t0, REG(B11_8));
 			// TEMP0 -> (R0)
-			tcg_gen_qemu_st_i32(t0, REG( 0 ), ctx->memidx, MO_UL);
-			gen_set_label(label);
+			tcg_gen_qemu_st_i32(t0, REG(0), ctx->memidx, MO_TEUL);
 			tcg_temp_free(t0);
 			return;
-		}
+    	}
     	break;
     }
     case 0x6000:		/* mov.b @Rm,Rn */
