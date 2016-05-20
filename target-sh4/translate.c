@@ -183,34 +183,7 @@ void superh_cpu_dump_state(CPUState *cs, FILE *f,
 
 static void gen_read_sr(DisasContext * ctx, TCGv dst)
 {
-    TCGv t0 = tcg_temp_new();
-    tcg_gen_shli_i32(t0, cpu_sr_q, SR_Q);
-    tcg_gen_or_i32(dst, dst, t0);
-    tcg_gen_shli_i32(t0, cpu_sr_m, SR_M);
-    tcg_gen_or_i32(dst, dst, t0);
-    tcg_gen_shli_i32(t0, cpu_sr_t, SR_T);
-    tcg_gen_or_i32(dst, cpu_sr, t0);
-
-#if 0
-    // XXX: @CF: this will be slow, but is the least disruptive way to change the way cpu_sr is dealt with rather than
-    // breaking out all bits and refactoring all of the code.
-    // XXX: @CF: actually, the status register should not even be a static variable in this file, it should be encapsulated
-    // within disasm ctx
-    if ( ! HAS_SR_PRIVILEGED_MODE( ctx->features ) ) {
-    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_MD) );
-    }
-    if ( ! HAS_SR_REGISTER_BANK( ctx->features ) ) {
-    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_RB) );
-    }
-    if ( ! HAS_SR_BLOCK_EXCEPTION( ctx->features ) ) {
-    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_BL) );
-    }
-    if ( ! HAS_SR_DISABLE_FPU( ctx->features ) ) {
-    	tcg_gen_andi_i32(dst, dst, ~(1 << SR_FD) );
-    }
-#endif
-
-    tcg_temp_free_i32(t0);
+	tcg_gen_mov_i32(dst, cpu_sr);
 }
 
 static void gen_write_sr(DisasContext * ctx, TCGv src)
@@ -223,7 +196,6 @@ static void gen_write_sr(DisasContext * ctx, TCGv src)
     tcg_gen_shri_i32(cpu_sr_t, src, SR_T);
     tcg_gen_andi_i32(cpu_sr_t, cpu_sr_t, 1);
 
-#if 1
     // XXX: @CF: this will be slow, but is the least disruptive way to change the way cpu_sr is dealt with rather than
     // breaking out all bits and refactoring all of the code.
     // XXX: @CF: actually, the status register should not even be a static variable in this file, it should be encapsulated
@@ -240,7 +212,6 @@ static void gen_write_sr(DisasContext * ctx, TCGv src)
     if ( ! HAS_SR_DISABLE_FPU( ctx->features ) ) {
     	tcg_gen_andi_i32(cpu_sr, cpu_sr, ~(1 << SR_FD) );
     }
-#endif
 }
 
 static void gen_goto_tb(DisasContext * ctx, int n, target_ulong dest)
