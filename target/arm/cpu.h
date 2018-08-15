@@ -1171,33 +1171,7 @@ static inline uint32_t xpsr_read(CPUARMState *env)
 }
 
 /* Set the xPSR.  Note that some bits of mask must be all-set or all-clear.  */
-static inline void xpsr_write(CPUARMState *env, uint32_t val, uint32_t mask)
-{
-    if (mask & XPSR_NZCV) {
-        env->ZF = (~val) & XPSR_Z;
-        env->NF = val;
-        env->CF = (val >> 29) & 1;
-        env->VF = (val << 3) & 0x80000000;
-    }
-    if (mask & XPSR_Q) {
-        env->QF = ((val & XPSR_Q) != 0);
-    }
-    if (mask & XPSR_T) {
-        env->thumb = ((val & XPSR_T) != 0);
-    }
-    if (mask & XPSR_IT_0_1) {
-        env->condexec_bits &= ~3;
-        env->condexec_bits |= (val >> 25) & 3;
-    }
-    if (mask & XPSR_IT_2_7) {
-        env->condexec_bits &= 3;
-        env->condexec_bits |= (val >> 8) & 0xfc;
-    }
-    if (mask & XPSR_EXCP) {
-        /* Note that this only happens on exception exit */
-        write_v7m_exception(env, val & XPSR_EXCP);
-    }
-}
+void xpsr_write(CPUARMState *env, uint32_t val, uint32_t mask);
 
 #define HCR_VM        (1ULL << 0)
 #define HCR_SWIO      (1ULL << 1)
@@ -1495,6 +1469,8 @@ enum arm_features {
     ARM_FEATURE_V8_FP16, /* implements v8.2 half-precision float */
     ARM_FEATURE_V8_FCMA, /* has complex number part of v8.3 extensions.  */
     ARM_FEATURE_M_MAIN, /* M profile Main Extension */
+    ARM_FEATURE_M_FPV4_SP, /* M profile Floating Point Extension, single-precision */
+    ARM_FEATURE_M_FPV5, /* M profile Floating Point Extension, double-precision */
 };
 
 static inline int arm_feature(CPUARMState *env, int feature)

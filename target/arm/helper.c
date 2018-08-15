@@ -6185,6 +6185,36 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
     env->uncached_cpsr = (env->uncached_cpsr & ~mask) | (val & mask);
 }
 
+void xpsr_write(CPUARMState *env, uint32_t val, uint32_t mask)
+{
+	if (mask & XPSR_NZCV) {
+		env->ZF = (~val) & XPSR_Z;
+		env->NF = val;
+		env->CF = (val >> 29) & 1;
+		env->VF = (val << 3) & 0x80000000;
+	}
+	if (mask & XPSR_Q) {
+		env->QF = ((val & XPSR_Q) != 0);
+	}
+	if (mask & XPSR_T) {
+		env->thumb = ((val & XPSR_T) != 0);
+	}
+	if (mask & XPSR_IT_0_1) {
+		env->condexec_bits &= ~3;
+		env->condexec_bits |= (val >> 25) & 3;
+	}
+	if (mask & XPSR_IT_2_7) {
+		env->condexec_bits &= 3;
+		env->condexec_bits |= (val >> 8) & 0xfc;
+	}
+	if (mask & XPSR_EXCP) {
+#ifndef CONFIG_USER_ONLY
+		/* Note that this only happens on exception exit */
+		write_v7m_exception(env, val & XPSR_EXCP);
+#endif
+	}
+}
+
 /* Sign/zero extend */
 uint32_t HELPER(sxtb16)(uint32_t x)
 {
