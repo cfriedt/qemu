@@ -20,7 +20,19 @@
 #include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "cpu.h"
+#include "internals.h"
 #include "exec/gdbstub.h"
+
+static bool v7m_using_psp(CPUARMState *env)
+{
+    /* Handler mode always uses the main stack; for thread mode
+     * the CONTROL.SPSEL bit determines the answer.
+     * Note that in v7M it is not possible to be in Handler mode with
+     * CONTROL.SPSEL non-zero, but in v8M it is, so we must check both.
+     */
+    return !arm_v7m_is_handler_mode(env) &&
+        env->v7m.control[env->v7m.secure] & R_V7M_CONTROL_SPSEL_MASK;
+}
 
 typedef struct RegisterSysregXmlParam {
     CPUState *cs;
@@ -58,8 +70,52 @@ int arm_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
         }
         return gdb_get_reg32(mem_buf, 0);
     case 25:
-        /* CPSR */
-        return gdb_get_reg32(mem_buf, cpsr_read(env));
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* xPSR */
+            return gdb_get_reg32(mem_buf, xpsr_read(env));
+        } else {
+            /* CPSR */
+            return gdb_get_reg32(mem_buf, cpsr_read(env));
+        }
+        break;
+    case 26:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* PSP */
+            if (v7m_using_psp(env)) {
+                return gdb_get_reg32(mem_buf, env->regs[ 13 ]);
+            } else {
+                return gdb_get_reg32(mem_buf, env->v7m.other_sp);
+            }
+        }
+        break;
+    case 27:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            if (arm_feature(env, ARM_FEATURE_V7) || arm_feature(env, ARM_FEATURE_V8)) {
+                /* PRIMASK */
+                return gdb_get_reg8(mem_buf, env->v7m.primask[env->v7m.secure]);
+            }
+        }
+        break;
+    case 28:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            if (arm_feature(env, ARM_FEATURE_V7) || arm_feature(env, ARM_FEATURE_V8)) {
+                /* FAULTMASK */
+                return gdb_get_reg8(mem_buf, env->v7m.faultmask[env->v7m.secure]);
+            }
+        }
+        break;
+    case 29:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* BASEPRI */
+            return gdb_get_reg8(mem_buf, env->v7m.basepri[env->v7m.secure]);
+        }
+        break;
+    case 30:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* CONTROL */
+            return gdb_get_reg8(mem_buf, env->v7m.control[env->v7m.secure]);
+        }
+        break;
     }
     /* Unknown register.  */
     return 0;
@@ -99,9 +155,68 @@ int arm_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
         }
         return 4;
     case 25:
-        /* CPSR */
-        cpsr_write(env, tmp, 0xffffffff, CPSRWriteByGDBStub);
-        return 4;
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* xPSR */
+            xpsr_write(env, tmp, 0xffffffff);
+            return 4;
+        } else {
+            /* CPSR */
+            cpsr_write(env, tmp, 0xffffffff, CPSRWriteByGDBStub);
+            return 4;
+        }
+        break;
+    case 26:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* PSP */
+            if (v7m_using_psp(env)) {
+                env->regs[ 13 ] = tmp;
+                return 4;
+            } else {
+                env->v7m.other_sp = tmp;
+                return 4;
+            }
+        }
+        break;
+    case 27:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            if (arm_feature(env, ARM_FEATURE_V7) || arm_feature(env, ARM_FEATURE_V8)) {
+                /* PRIMASK */
+                env->v7m.primask[env->v7m.secure] = tmp & 0x1;
+                return 1;
+            }
+        }
+        break;
+    case 28:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            if (arm_feature(env, ARM_FEATURE_V7) || arm_feature(env, ARM_FEATURE_V8)) {
+                /* FAULTMASK */
+                env->v7m.faultmask[env->v7m.secure] = tmp & 0x1;
+                return 1;
+            }
+        }
+        break;
+    case 29:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* BASEPRI */
+            env->v7m.basepri[env->v7m.secure] = tmp & 0xff;
+            return 1;
+        }
+        break;
+    case 30:
+        if (arm_feature(env, ARM_FEATURE_M)) {
+            /* CONTROL */
+            if (!arm_feature(env, ARM_FEATURE_M_MAIN)) {
+                tmp &= ~R_V7M_CONTROL_NPRIV_MASK;
+            }
+            if (!(arm_feature(env, ARM_FEATURE_M_FPV4_SP) || arm_feature(env, ARM_FEATURE_M_FPV5))) {
+                tmp &= ~R_V7M_CONTROL_FPCA_MASK;
+            }
+            if (!arm_feature(env, ARM_FEATURE_M_SECURITY) || !env->v7m.secure) {
+                tmp &= ~R_V7M_CONTROL_SFPA_MASK;
+            }
+            env->v7m.control[env->v7m.secure] = tmp & 0xf;
+        }
+        break;
     }
     /* Unknown register.  */
     return 0;
