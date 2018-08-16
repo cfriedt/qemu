@@ -6,7 +6,7 @@
      notice and this notice are preserved.  -->
 
 <!DOCTYPE feature SYSTEM "gdb-target.dtd">
-<feature name="org.gnu.gdb.arm.core">
+<feature name="org.gnu.gdb.arm.m-profile">
   <reg name="r0" bitsize="32"/>
   <reg name="r1" bitsize="32"/>
   <reg name="r2" bitsize="32"/>
@@ -29,8 +29,8 @@
        and the CPSR in the "g" packet.  -->
   <reg name="xpsr" bitsize="32" regnum="25"/>
   <reg name="psp" bitsize="32" regnum="26"/>
-  <reg name="primask" bitsize="1" regnum="27"/>
-  <reg name="faultmask" bitsize="1" regnum="28"/>
+  <reg name="primask" bitsize="8" regnum="27"/>
+  <reg name="faultmask" bitsize="8" regnum="28"/>
   <reg name="basepri" bitsize="8" regnum="29"/>
   <reg name="control" bitsize="8" regnum="30"/>
 </feature>
