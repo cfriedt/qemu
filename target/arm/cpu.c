@@ -1341,7 +1341,8 @@ static void arm_v7m_class_init(ObjectClass *oc, void *data)
 #ifndef CONFIG_USER_ONLY
     cc->do_interrupt = arm_v7m_cpu_do_interrupt;
 #endif
-    cc->gdb_core_xml_file = "arm-core-m.xml";
+    cc->gdb_num_core_regs = 31;
+    cc->gdb_core_xml_file = "arm-m-profile.xml";
 
     cc->cpu_exec_interrupt = arm_v7m_cpu_exec_interrupt;
 }
