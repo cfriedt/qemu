@@ -29,6 +29,9 @@
 #include "exec/address-spaces.h"
 #include "hw/arm/stm32f479_soc.h"
 
+#include "qemu/config-file.h"
+#include "qemu/option.h"
+
 static const uint32_t timer_addr[STM_NUM_TIMERS] = {0x40010000, 0x40000000,
     0x40000400, 0x40000800, 0x40000c00, 0x40001000, 0x40001400, 0x40010400,
 	0x40014000, 0x40014400, 0x40014800, 0x40001800, 0x40001C00, 0x40002000};
@@ -84,12 +87,20 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     DeviceState *dev, *armv7m;
     SysBusDevice *busdev;
     Error *err = NULL;
+    QemuOpts *opts;
+    uint64_t sdram_size;
     int i;
+
+    /* With "-m 0", qemu defaults to 128 MiB of SDRAM for memory.size */
+    opts = qemu_find_opts_singleton("memory");
+    sdram_size = qemu_opt_get_size(opts, "size", SDRAM_SIZE_MAX);
+    sdram_size = sdram_size >= SDRAM_SIZE_MAX ? SDRAM_SIZE_MAX : sdram_size;
 
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *sram = g_new(MemoryRegion, 1);
     MemoryRegion *flash = g_new(MemoryRegion, 1);
     MemoryRegion *flash_alias = g_new(MemoryRegion, 1);
+    MemoryRegion *sdram = g_new(MemoryRegion, 1);
 
     memory_region_init_ram(flash, NULL, "STM32F479.flash", FLASH_SIZE,
                            &error_fatal);
@@ -105,6 +116,10 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     memory_region_init_ram(sram, NULL, "STM32F479.sram", SRAM_SIZE,
                            &error_fatal);
     memory_region_add_subregion(system_memory, SRAM_BASE_ADDRESS, sram);
+
+    memory_region_init_ram(sdram, NULL, "STM32F479.sdram", sdram_size,
+                           &error_fatal);
+    memory_region_add_subregion(system_memory, SDRAM_BASE_ADDRESS, sdram);
 
     armv7m = DEVICE(&s->armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", 92);
