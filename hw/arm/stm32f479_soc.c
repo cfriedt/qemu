@@ -58,6 +58,10 @@ static void stm32f479_soc_initfn(Object *obj)
 
     sysbus_init_child_obj(obj, "syscfg", &s->syscfg, sizeof(s->syscfg),
                           TYPE_STM32F4XX_SYSCFG);
+
+    sysbus_init_child_obj(obj, "fmc", &s->fmc, sizeof(s->fmc),
+                          TYPE_STM32F4XX_FMC);
+
     for (i = 0; i < STM_NUM_TIMERS; i++) {
         sysbus_init_child_obj(obj, "timer[*]", &s->timer[i],
                               sizeof(s->timer[i]), TYPE_STM32F4XX_TIMER);
@@ -142,6 +146,17 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40013800);
     sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, 71));
+
+    /* Flexible memory controller */
+    dev = DEVICE(&s->fmc);
+    object_property_set_bool(OBJECT(&s->fmc), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, 0xA0000000);
+    //sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, 71));
 
     /* Timer 2 to 5 */
     for (i = 0; i < STM_NUM_TIMERS; i++) {

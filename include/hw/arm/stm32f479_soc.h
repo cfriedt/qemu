@@ -25,6 +25,7 @@
 #ifndef HW_ARM_STM32F479_SOC_H
 #define HW_ARM_STM32F479_SOC_H
 
+#include "hw/misc/stm32f4xx_fmc.h"
 #include "hw/misc/stm32f4xx_syscfg.h"
 #include "hw/timer/stm32f4xx_timer.h"
 #include "hw/char/stm32f4xx_usart.h"
@@ -59,6 +60,7 @@ typedef struct STM32F479State {
     ARMv7MState armv7m;
 
     STM32F4XXSyscfgState syscfg;
+    STM32F4XXFmcState fmc;
     STM32F4XXUsartState usart[STM_NUM_USARTS];
     STM32F4XXTimerState timer[STM_NUM_TIMERS];
     STM32F4XXADCState adc[STM_NUM_ADCS];
