@@ -59,6 +59,7 @@ obj-$(CONFIG_ZYNQ) += zynq-xadc.o
 obj-$(CONFIG_STM32F2XX_SYSCFG) += stm32f2xx_syscfg.o
 obj-$(CONFIG_STM32F4XX_SYSCFG) += stm32f4xx_syscfg.o
 obj-$(CONFIG_STM32F4XX_FMC) += stm32f4xx_fmc.o
+obj-$(CONFIG_STM32F4XX_RCC) += stm32f4xx_rcc.o
 obj-$(CONFIG_MIPS_CPS) += mips_cmgcr.o
 obj-$(CONFIG_MIPS_CPS) += mips_cpc.o
 obj-$(CONFIG_MIPS_ITU) += mips_itu.o
