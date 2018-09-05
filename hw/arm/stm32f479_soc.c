@@ -106,19 +106,15 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     MemoryRegion *system_memory = get_system_memory();
     MemoryRegion *sram = g_new(MemoryRegion, 1);
     MemoryRegion *flash = g_new(MemoryRegion, 1);
-    MemoryRegion *flash_alias = g_new(MemoryRegion, 1);
     MemoryRegion *sdram = g_new(MemoryRegion, 1);
+    MemoryRegion *sdram_alias = g_new(MemoryRegion, 1);
 
     memory_region_init_ram(flash, NULL, "STM32F479.flash", FLASH_SIZE,
                            &error_fatal);
-    memory_region_init_alias(flash_alias, NULL, "STM32F479.flash.alias",
-                             flash, 0, FLASH_SIZE);
 
     memory_region_set_readonly(flash, true);
-    memory_region_set_readonly(flash_alias, true);
 
     memory_region_add_subregion(system_memory, FLASH_BASE_ADDRESS, flash);
-    memory_region_add_subregion(system_memory, 0, flash_alias);
 
     memory_region_init_ram(sram, NULL, "STM32F479.sram", SRAM_SIZE,
                            &error_fatal);
@@ -126,7 +122,14 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
 
     memory_region_init_ram(sdram, NULL, "STM32F479.sdram", sdram_size,
                            &error_fatal);
+    memory_region_init_alias(sdram_alias, NULL, "STM32F479.sdram.alias",
+                             flash, SDRAM_ALIAS_BASE_ADDRESS,
+                             sdram_size > SDRAM_ALIAS_SIZE_MAX
+                             ? SDRAM_ALIAS_SIZE_MAX : sdram_size );
+
     memory_region_add_subregion(system_memory, SDRAM_BASE_ADDRESS, sdram);
+    memory_region_add_subregion(system_memory, SDRAM_ALIAS_BASE_ADDRESS,
+                                sdram_alias);
 
     armv7m = DEVICE(&s->armv7m);
     qdev_prop_set_uint32(armv7m, "num-irq", 92);

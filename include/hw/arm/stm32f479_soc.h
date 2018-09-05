@@ -50,6 +50,8 @@
 #define SRAM_SIZE (320 * 1024)
 #define SDRAM_BASE_ADDRESS 0xC0000000
 #define SDRAM_SIZE_MAX (512 * 1024 * 1024)
+#define SDRAM_ALIAS_BASE_ADDRESS 0x00000000
+#define SDRAM_ALIAS_SIZE_MAX (128 * 1024 * 1024)
 
 typedef struct STM32F479State {
     /*< private >*/

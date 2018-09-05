@@ -605,6 +605,18 @@ typedef struct CPUARMState {
     /* Fields up to this point are cleared by a CPU reset */
     struct {} end_reset_fields;
 
+	/* Some armv7-m chipsets, like stm32f, allow the system to boot
+	 * from addresses other than 0x0 via boot pins. In those cases,
+	 * the low address of the elf image represents the location
+	 * where the vector is located.
+	 * However, arm_cpu_reset() is called twice during regular startup,
+	 * which resets most core registers, so register changes made by
+	 * armv7m_load_kernel() do not persist.
+	 * If preserved_vecbase is non-zero, it will be placed into the
+	 * proper vector table offset register.
+	 */
+    uint64_t preserved_vecbase;
+
     CPU_COMMON
 
     /* Fields after CPU_COMMON are preserved across CPU reset. */

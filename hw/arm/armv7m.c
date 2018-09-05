@@ -304,6 +304,15 @@ void armv7m_load_kernel(ARMCPU *cpu, const char *kernel_filename, int mem_size)
             image_size = load_image_targphys_as(kernel_filename, 0,
                                                 mem_size, as);
             lowaddr = 0;
+        } else {
+            if (lowaddr) {
+                /* Some armv7-m chipsets, like stm32f, allow the system to boot
+                 * from addresses other than 0x0 via boot pins. In those cases,
+                 * the low address of the elf image represents the location
+                 * where the vector is located.
+                 */
+                cpu->env.preserved_vecbase = lowaddr;
+            }
         }
         if (image_size < 0) {
             error_report("Could not load kernel '%s'", kernel_filename);
