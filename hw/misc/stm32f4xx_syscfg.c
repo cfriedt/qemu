@@ -1,7 +1,8 @@
 /*
  * STM32F4XX SYSCFG
  *
- * Copyright (c) 2014 Alistair Francis <alistair@alistair23.me>
+ * Copyright (c) 2018 Friedt Professional Engineering Services, Inc <info@friedt.co>
+ * Written by Christopher Friedt
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
