@@ -124,7 +124,7 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     memory_region_init_ram(sdram, NULL, "STM32F479.sdram", sdram_size,
                            &error_fatal);
     memory_region_init_alias(sdram_alias, NULL, "STM32F479.sdram.alias",
-                             flash, SDRAM_ALIAS_BASE_ADDRESS,
+                             sdram, SDRAM_ALIAS_BASE_ADDRESS,
                              sdram_size > SDRAM_ALIAS_SIZE_MAX
                              ? SDRAM_ALIAS_SIZE_MAX : sdram_size );
 
