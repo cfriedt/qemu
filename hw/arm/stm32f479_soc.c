@@ -36,18 +36,20 @@
 static const uint32_t timer_addr[STM_NUM_TIMERS] = {0x40010000, 0x40000000,
     0x40000400, 0x40000800, 0x40000c00, 0x40001000, 0x40001400, 0x40010400,
 	0x40014000, 0x40014400, 0x40014800, 0x40001800, 0x40001C00, 0x40002000};
-static const uint32_t usart_addr[STM_NUM_USARTS] = { 0x40011000, 0x40004400,
-    0x40004800, 0x40004C00, 0x40005000, 0x40011400, 0x40007800, 0x40007C00 };
-static const uint32_t adc_addr[STM_NUM_ADCS] = { 0x40012000, 0x40012100,
-    0x40012200 };
-static const uint32_t spi_addr[STM_NUM_SPIS] = { 0x40013000, 0x40003800,
-    0x40003C00, 0x40013400, 0x40015000, 0x40015400 };
+static const uint32_t usart_addr[STM_NUM_USARTS] = {0x40011000, 0x40004400,
+    0x40004800, 0x40004C00, 0x40005000, 0x40011400, 0x40007800, 0x40007C00};
+static const uint32_t adc_addr[STM_NUM_ADCS] = {0x40012000, 0x40012100,
+    0x40012200};
+static const uint32_t spi_addr[STM_NUM_SPIS] = {0x40013000, 0x40003800,
+    0x40003C00, 0x40013400, 0x40015000, 0x40015400};
+static const uint32_t sdio_addr[STM_NUM_SDIOS] = {0x40012C00};
 
 static const int timer_irq[STM_NUM_TIMERS] = {27, 28, 29, 30, 50, 54, 55, 46,
     24, 25, 26, 43, 44, 45};
 static const int usart_irq[STM_NUM_USARTS] = {37, 38, 39, 52, 53, 71, 82, 83};
 #define ADC_IRQ 18
 static const int spi_irq[STM_NUM_SPIS] = {35, 36, 51, 84, 85, 86};
+static const int sdio_irq[STM_NUM_SDIOS] = {49};
 
 static void stm32f479_soc_initfn(Object *obj)
 {
@@ -175,6 +177,9 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40023800);
     //sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, 71));
+
+    /* Secure digital I/O */
+    sysbus_create_varargs("pl181", sdio_addr[0], qdev_get_gpio_in(armv7m, sdio_irq[0]), NULL);
 
     /* Timer 2 to 5 */
     for (i = 0; i < STM_NUM_TIMERS; i++) {

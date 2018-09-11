@@ -44,6 +44,7 @@
 #define STM_NUM_TIMERS 14
 #define STM_NUM_ADCS 3
 #define STM_NUM_SPIS 6
+#define STM_NUM_SDIOS 1
 
 #define FLASH_BASE_ADDRESS 0x08000000
 #define FLASH_SIZE (2 * 1024 * 1024)
