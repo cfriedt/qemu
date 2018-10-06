@@ -43,6 +43,7 @@ static const uint32_t adc_addr[STM_NUM_ADCS] = {0x40012000, 0x40012100,
 static const uint32_t spi_addr[STM_NUM_SPIS] = {0x40013000, 0x40003800,
     0x40003C00, 0x40013400, 0x40015000, 0x40015400};
 static const uint32_t sdio_addr[STM_NUM_SDIOS] = {0x40012C00};
+static const uint32_t enet_addr[STM_NUM_ETH] = {0x40028000};
 
 static const int timer_irq[STM_NUM_TIMERS] = {27, 28, 29, 30, 50, 54, 55, 46,
     24, 25, 26, 43, 44, 45};
@@ -50,6 +51,7 @@ static const int usart_irq[STM_NUM_USARTS] = {37, 38, 39, 52, 53, 71, 82, 83};
 #define ADC_IRQ 18
 static const int spi_irq[STM_NUM_SPIS] = {35, 36, 51, 84, 85, 86};
 static const int sdio_irq[STM_NUM_SDIOS] = {49};
+static const int enet_irq[STM_NUM_ETH] = {61};
 
 static void stm32f479_soc_initfn(Object *obj)
 {
@@ -67,6 +69,9 @@ static void stm32f479_soc_initfn(Object *obj)
 
     sysbus_init_child_obj(obj, "rcc", &s->rcc, sizeof(s->rcc),
                           TYPE_STM32F4XX_RCC);
+
+    sysbus_init_child_obj(obj, "enet", &s->enet, sizeof(s->enet),
+                          TYPE_STM32F4XX_ENET);
 
     for (i = 0; i < STM_NUM_TIMERS; i++) {
         sysbus_init_child_obj(obj, "timer[*]", &s->timer[i],
@@ -177,6 +182,20 @@ static void stm32f479_soc_realize(DeviceState *dev_soc, Error **errp)
     busdev = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(busdev, 0, 0x40023800);
     //sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, 71));
+
+    /* Ethernet */
+    dev = DEVICE(&s->enet);
+    qemu_check_nic_model(&nd_table[0], TYPE_STM32F4XX_ENET);
+    qdev_set_nic_properties(dev, &nd_table[0]);
+    qdev_init_nofail(dev);
+    object_property_set_bool(OBJECT(&s->enet), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    busdev = SYS_BUS_DEVICE(dev);
+    sysbus_mmio_map(busdev, 0, enet_addr[0]);
+    sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, enet_irq[0]));
 
     /* Secure digital I/O */
     sysbus_create_varargs("pl181", sdio_addr[0], qdev_get_gpio_in(armv7m, sdio_irq[0]), NULL);

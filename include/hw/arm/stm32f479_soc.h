@@ -26,6 +26,7 @@
 #ifndef HW_ARM_STM32F479_SOC_H
 #define HW_ARM_STM32F479_SOC_H
 
+#include "hw/net/stm32f4xx_enet.h"
 #include "hw/misc/stm32f4xx_fmc.h"
 #include "hw/misc/stm32f4xx_rcc.h"
 #include "hw/misc/stm32f4xx_syscfg.h"
@@ -45,6 +46,7 @@
 #define STM_NUM_ADCS 3
 #define STM_NUM_SPIS 6
 #define STM_NUM_SDIOS 1
+#define STM_NUM_ETH 1
 
 #define FLASH_BASE_ADDRESS 0x08000000
 #define FLASH_SIZE (2 * 1024 * 1024)
@@ -67,6 +69,7 @@ typedef struct STM32F479State {
     STM32F4XXSyscfgState syscfg;
     STM32F4XXFmcState fmc;
     STM32F4XXRccState rcc;
+    STM32F4XXEnetState enet;
     STM32F4XXUsartState usart[STM_NUM_USARTS];
     STM32F4XXTimerState timer[STM_NUM_TIMERS];
     STM32F4XXADCState adc[STM_NUM_ADCS];
