@@ -24,6 +24,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "hw/net/mii.h"
 #include "hw/net/stm32f4xx_enet.h"
 #include "qemu/log.h"
 
@@ -41,6 +42,122 @@
 } while (0)
 
 #define DB_PRINT(fmt, args...) DB_PRINT_L(1, fmt, ## args)
+
+static const char *stm32f4xx_enet_reg_to_string( uint16_t offs ) {
+#if STM_ENET_ERR_DEBUG >= 1
+	struct istr {
+		unsigned i;
+		const char *s;
+	};
+#define _x( y ) { .i = ETH_ ## y, .s = "ETH_" #y, }
+	static const struct istr map[] = {
+		_x( MACCR ),
+		_x( MACFFR ),
+		_x( MACHTHR ),
+		_x( MACHTLR ),
+		_x( MACMIIAR ),
+		_x( MACMIIDR ),
+		_x( MACFCR ),
+		_x( MACVLANTR ),
+		_x( MACRWUFFR ),
+		_x( MACPMTCSR ),
+		_x( MACDBGR ),
+		_x( MACSR ),
+		_x( MACIMR ),
+		_x( MACA0HR ),
+		_x( MACA0LR ),
+		_x( MACA1HR ),
+		_x( MACA1LR ),
+		_x( MACA2HR ),
+		_x( MACA2LR ),
+		_x( MACA3HR ),
+		_x( MACA3LR ),
+		_x( MMCCR ),
+		_x( MMCRIR ),
+		_x( MMCTIR ),
+		_x( MMCRIMR ),
+		_x( MMCTIMR ),
+		_x( MMCTGFSCCR ),
+		_x( MMCTGFMSCCR ),
+		_x( MMCTGFCR ),
+		_x( MMCRFCECR ),
+		_x( MMCRGUFCR ),
+		_x( PTPTSCR ),
+		_x( PTPSSIR ),
+		_x( PTPTSHR ),
+		_x( PTPTSLR ),
+		_x( PTPTSHUR ),
+		_x( PTPTSLUR ),
+		_x( PTPTSAR ),
+		_x( PTPTTHR ),
+		_x( PTPTTLR ),
+		_x( PTPTSSR ),
+		_x( PTPPPSCR ),
+		_x( DMABMR ),
+		_x( DMATPDR ),
+		_x( DMARPDR ),
+		_x( DMARDLAR ),
+		_x( DMATDLAR ),
+		_x( DMASR ),
+		_x( DMAOMR ),
+		_x( DMAIER ),
+		_x( DMAMFBOCR ),
+		_x( DMARSWTR ),
+		_x( DMACHTDR ),
+		_x( DMACHRDR ),
+		_x( DMACHTBAR ),
+		_x( DMACHRBAR ),
+	};
+#undef _x
+
+	size_t i;
+
+	for( i = 0; i < ARRAY_SIZE( map ); i++ ) {
+		if ( offs == map[ i ].i ) {
+			return map[ i ].s;
+		}
+	}
+#endif
+
+	return "";
+}
+
+static const char *stm32f4xx_mii_reg_to_string( uint8_t offs ) {
+#if STM_ENET_ERR_DEBUG >= 1
+	struct istr {
+		unsigned i;
+		const char *s;
+	};
+#define _x( y ) { .i = MII_ ## y, .s = "MII_" #y, }
+	static const struct istr map[] = {
+		_x( BMCR ),
+		_x( BMSR ),
+		_x( PHYID1 ),
+		_x( PHYID2 ),
+		_x( ANAR ),
+		_x( ANLPAR ),
+		_x( ANER ),
+		_x( ANNP ),
+		_x( ANLPRNP ),
+		_x( CTRL1000 ),
+		_x( STAT1000 ),
+		_x( MDDACR ),
+		_x( MDDAADR ),
+		_x( EXTSTAT ),
+	};
+#undef _x
+
+	size_t i;
+
+	for( i = 0; i < ARRAY_SIZE( map ); i++ ) {
+		if ( offs == map[ i ].i ) {
+			return map[ i ].s;
+		}
+	}
+#endif
+
+	return "";
+}
 
 static int stm32f4xx_enet_post_load(void *opaque, int version_id)
 {
@@ -108,8 +225,10 @@ static const VMStateDescription stm32f4xx_enet_vmstate = {
 };
 
 /*
-static void stm32f4xx_enet_send(STM32F4XXEnetState *s)
-{
+static void stm32f4xx_enet_send(NetClientState *nc) {
+
+	STM32F4XXEnetState *s = qemu_get_nic_opaque(nc);
+
     int framelen = stm32f4xx_txpacket_datalen(s);
 
     // Ethernet header is in the FIFO but not in the datacount.
@@ -193,6 +312,44 @@ static ssize_t stm32f4xx_enet_receive(NetClientState *nc, const uint8_t *buf, si
 */
 }
 
+
+static void stm32f4xx_mii_set_link( STM32F4XXEnetState *s, bool link_ok ) {
+    if (link_ok) {
+        s->mii[MII_BMSR] |= MII_BMSR_LINK_ST;
+        s->mii[MII_ANLPAR] |= MII_ANLPAR_TXFD | MII_ANLPAR_TX |
+            MII_ANLPAR_10FD | MII_ANLPAR_10 | MII_ANLPAR_CSMACD;
+    } else {
+        s->mii[MII_BMSR] &= ~MII_BMSR_LINK_ST;
+        s->mii[MII_ANLPAR] &= 0x01ff;
+    }
+    s->link_ok = link_ok;
+}
+
+static void stm32f4xx_mii_reset( STM32F4XXEnetState *s ) {
+
+	DB_PRINT( "" );
+
+    memset(s->mii, 0, sizeof(s->mii));
+    s->mii[MII_BMCR] = MII_BMCR_AUTOEN;
+    s->mii[MII_BMSR] = MII_BMSR_100TX_FD | MII_BMSR_100TX_HD |
+        MII_BMSR_10T_FD | MII_BMSR_10T_HD | MII_BMSR_MFPS |
+        MII_BMSR_AN_COMP | MII_BMSR_AUTONEG;
+    s->mii[MII_PHYID1] = RTL8201CP_PHYID1;
+    s->mii[MII_PHYID2] = RTL8201CP_PHYID2;
+    s->mii[MII_ANAR] = MII_ANAR_TXFD | MII_ANAR_TX |
+        MII_ANAR_10FD | MII_ANAR_10 | MII_ANAR_CSMACD;
+    stm32f4xx_mii_set_link(s, s->link_ok);
+}
+
+static void stm32f4xx_enet_set_link_status(NetClientState *nc) {
+	STM32F4XXEnetState *s = qemu_get_nic_opaque(nc);
+
+//    if (GET_REGBIT(s, MIICOMMAND, SCANSTAT)) {
+//        SET_REGFIELD(s, MIISTATUS, LINKFAIL, nc->link_down);
+//    }
+    stm32f4xx_mii_set_link( s, !nc->link_down );
+}
+
 static void stm32f4xx_enet_reset(STM32F4XXEnetState *s)
 {
 	s->eth_maccr = 0x00008000;
@@ -251,6 +408,55 @@ static void stm32f4xx_enet_reset(STM32F4XXEnetState *s)
 	s->eth_dmachrdr = 0x00000000;
 	s->eth_dmachtbar = 0x00000000;
 	s->eth_dmachrbar = 0x00000000;
+
+    s->mii[MII_BMCR] = MII_BMCR_AUTOEN;
+    s->mii[MII_BMSR] = MII_BMSR_100TX_FD | MII_BMSR_100TX_HD |
+        MII_BMSR_10T_FD | MII_BMSR_10T_HD | MII_BMSR_MFPS |
+        MII_BMSR_AN_COMP | MII_BMSR_AUTONEG;
+    s->mii[MII_PHYID1] = RTL8201CP_PHYID1;
+    s->mii[MII_PHYID2] = RTL8201CP_PHYID2;
+    s->mii[MII_ANAR] = MII_ANAR_TXFD | MII_ANAR_TX |
+        MII_ANAR_10FD | MII_ANAR_10 | MII_ANAR_CSMACD;
+
+    stm32f4xx_mii_reset( s );
+
+    stm32f4xx_mii_set_link( s, false );
+
+    DB_PRINT("mii phy id: %04x%04x\n", s->mii[MII_PHYID1], s->mii[MII_PHYID2] );
+}
+
+static uint16_t stm32f4xx_mii_read( STM32F4XXEnetState *s, uint8_t mii_addr ) {
+	uint16_t value;
+	value =
+		mii_addr < MII_NSR
+		? s->mii[ mii_addr ]
+		: 0xffff
+	;
+	DB_PRINT("  0x%04x <= %s (0x%02x)\n", value, stm32f4xx_mii_reg_to_string( mii_addr ), mii_addr);
+	return value;
+}
+
+static void stm32f4xx_mii_write( STM32F4XXEnetState *s, uint8_t mii_addr, uint16_t value ) {
+
+	if ( mii_addr < MII_NSR ) {
+
+		switch( mii_addr ) {
+		case MII_BMSR:
+		case MII_PHYID1:
+		case MII_PHYID2:
+			break;
+		case MII_BMCR:
+			if ( value & MII_BMCR_RESET ) {
+				stm32f4xx_mii_reset( s );
+				break;
+			}
+			/* no break */
+		default:
+			DB_PRINT("0x%04x => %s (0x%02x)\n", value, stm32f4xx_mii_reg_to_string( mii_addr ), mii_addr);
+			s->mii[ mii_addr ] = value;
+			break;
+		}
+	}
 }
 
 static uint64_t stm32f4xx_enet_read(void *opaque, hwaddr addr,
@@ -258,72 +464,88 @@ static uint64_t stm32f4xx_enet_read(void *opaque, hwaddr addr,
 {
     STM32F4XXEnetState *s = opaque;
 
-    DB_PRINT("0x%"HWADDR_PRIx"\n", addr);
+    uint32_t value;
 
     switch (addr) {
-	case ETH_MACCR: return s->eth_maccr & 0x02cf7efc;
-	case ETH_MACFFR: return s->eth_macffr & 0x800007ff;
-	case ETH_MACHTHR: return s->eth_machthr & 0xffffffff;
-	case ETH_MACHTLR: return s->eth_machtlr & 0xffffffff;
-	case ETH_MACMIIAR: return s->eth_macmiiar & 0x0000ffdf;
-	case ETH_MACMIIDR: return s->eth_macmiidr & 0x0000ffff;
-	case ETH_MACFCR: return s->eth_macfcr & 0xffff00bf;
-	case ETH_MACVLANTR: return s->eth_macvlantr & 0x0001ffff;
-	case ETH_MACRWUFFR: return s->eth_macrwuffr & 0xffffffff;
-	case ETH_MACPMTCSR: return s->eth_macpmtcsr & 0x000002c7;
-	case ETH_MACDBGR: return s->eth_macdbgr & 0x037f037e;
-	case ETH_MACSR: return s->eth_macsr & 0x00000278;
-	case ETH_MACIMR: return s->eth_macimr & 0x00000208;
-	case ETH_MACA0HR: return s->eth_maca0hr & 0x80000ffff;
-	case ETH_MACA0LR: return s->eth_maca0lr & 0xffffffff;
-	case ETH_MACA1HR: return s->eth_maca1hr & 0xff00ffffff;
-	case ETH_MACA1LR: return s->eth_maca1lr & 0xffffffff;
-	case ETH_MACA2HR: return s->eth_maca2hr & 0xff00ffffff;
-	case ETH_MACA2LR: return s->eth_maca2lr & 0xffffffff;
-	case ETH_MACA3HR: return s->eth_maca3hr & 0xff00ffffff;
-	case ETH_MACA3LR: return s->eth_maca3lr & 0xffffffff;
-	case ETH_MMCCR: return s->eth_mmccr & 0x0000003f;
-	case ETH_MMCRIR: return s->eth_mmcrir & 0x000200c0;
-	case ETH_MMCTIR: return s->eth_mmctir & 0x0020c000;
-	case ETH_MMCRIMR: return s->eth_mmcrimr & 0x000200c0;
-	case ETH_MMCTIMR: return s->eth_mmctimr & 0x0010c000;
-	case ETH_MMCTGFSCCR: return s->eth_mmctgfsccr & 0xffffffff;
-	case ETH_MMCTGFMSCCR: return s->eth_mmctgfmsccr & 0xffffffff;
-	case ETH_MMCTGFCR: return s->eth_mmctgfcr & 0xffffffff;
-	case ETH_MMCRFCECR: return s->eth_mmcrfcecr & 0xffffffff;
-	case ETH_MMCRGUFCR: return s->eth_mmcrgufcr & 0xffffffff;
-	case ETH_PTPTSCR: return s->eth_ptptscr & 0x0003ff3f;
-	case ETH_PTPSSIR: return s->eth_ptpssir & 0x000000ff;
-	case ETH_PTPTSHR: return s->eth_ptptshr & 0xffffffff;
-	case ETH_PTPTSLR: return s->eth_ptptslr & 0xffffffff;
-	case ETH_PTPTSHUR: return s->eth_ptptshur & 0xffffffff;
-	case ETH_PTPTSLUR: return s->eth_ptptslur & 0xffffffff;
-	case ETH_PTPTSAR: return s->eth_ptptsar & 0xffffffff;
-	case ETH_PTPTTHR: return s->eth_ptptthr & 0xffffffff;
-	case ETH_PTPTTLR: return s->eth_ptpttlr & 0xffffffff;
-	case ETH_PTPTSSR: return s->eth_ptptssr & 0x00000003;
-	case ETH_PTPPPSCR: return s->eth_ptpppscr & 0x0000000f;
-	case ETH_DMABMR: return s->eth_dmabmr & 0x07ffffff;
-	case ETH_DMATPDR: return s->eth_dmatpdr & 0xffffffff;
-	case ETH_DMARPDR: return s->eth_dmarpdr & 0xffffffff;
-	case ETH_DMARDLAR: return s->eth_dmardlar & 0xffffffff;
-	case ETH_DMATDLAR: return s->eth_dmatdlar & 0xffffffff;
-	case ETH_DMASR: return s->eth_dmasr & 0x3bffe7ff;
-	case ETH_DMAOMR: return s->eth_dmaomr & 0x0731e0de;
-	case ETH_DMAIER: return s->eth_dmaier & 0x0001e7ff;
-	case ETH_DMAMFBOCR: return s->eth_dmamfbocr & 0x1fffffff;
-	case ETH_DMARSWTR: return s->eth_dmarswtr & 0x000000ff;
-	case ETH_DMACHTDR: return s->eth_dmachtdr & 0xffffffff;
-	case ETH_DMACHRDR: return s->eth_dmachrdr & 0xffffffff;
-	case ETH_DMACHTBAR: return s->eth_dmachtbar & 0xffffffff;
-	case ETH_DMACHRBAR: return s->eth_dmachrbar & 0xffffffff;
+	case ETH_MACCR: value = s->eth_maccr & 0x02cf7efc; break;
+	case ETH_MACFFR: value = s->eth_macffr & 0x800007ff; break;
+	case ETH_MACHTHR: value = s->eth_machthr & 0xffffffff; break;
+	case ETH_MACHTLR: value = s->eth_machtlr & 0xffffffff; break;
+	case ETH_MACMIIAR: value = s->eth_macmiiar & 0x0000ffdf; break;
+	case ETH_MACMIIDR: value = s->eth_macmiidr & 0x0000ffff; break;
+	case ETH_MACFCR: value = s->eth_macfcr & 0xffff00bf; break;
+	case ETH_MACVLANTR: value = s->eth_macvlantr & 0x0001ffff; break;
+	case ETH_MACRWUFFR: value = s->eth_macrwuffr & 0xffffffff; break;
+	case ETH_MACPMTCSR: value = s->eth_macpmtcsr & 0x000002c7; break;
+	case ETH_MACDBGR: value = s->eth_macdbgr & 0x037f037e; break;
+	case ETH_MACSR: value = s->eth_macsr & 0x00000278; break;
+	case ETH_MACIMR: value = s->eth_macimr & 0x00000208; break;
+	case ETH_MACA0HR:
+		//value = s->eth_maca0hr & 0x80000ffff;
+		value =
+			0
+			| ((uint32_t)s->conf.macaddr.a[4] << 0)
+			| ((uint32_t)s->conf.macaddr.a[5] << 8);
+		break;
+	case ETH_MACA0LR:
+		value =
+			0
+			| ((uint32_t)s->conf.macaddr.a[0] << 0)
+			| ((uint32_t)s->conf.macaddr.a[1] << 8)
+			| ((uint32_t)s->conf.macaddr.a[2] << 16)
+			| ((uint32_t)s->conf.macaddr.a[3] << 24);
+		//value = s->eth_maca0lr & 0xffffffff;
+		break;
+//	case ETH_MACA1HR: value = s->eth_maca1hr & 0xff00ffffff; break;
+//	case ETH_MACA1LR: value = s->eth_maca1lr & 0xffffffff; break;
+//	case ETH_MACA2HR: value = s->eth_maca2hr & 0xff00ffffff; break;
+//	case ETH_MACA2LR: value = s->eth_maca2lr & 0xffffffff; break;
+//	case ETH_MACA3HR: value = s->eth_maca3hr & 0xff00ffffff; break;
+//	case ETH_MACA3LR: value = s->eth_maca3lr & 0xffffffff; break;
+	case ETH_MMCCR: value = s->eth_mmccr & 0x0000003f; break;
+	case ETH_MMCRIR: value = s->eth_mmcrir & 0x000200c0; break;
+	case ETH_MMCTIR: value = s->eth_mmctir & 0x0020c000; break;
+	case ETH_MMCRIMR: value = s->eth_mmcrimr & 0x000200c0; break;
+	case ETH_MMCTIMR: value = s->eth_mmctimr & 0x0010c000; break;
+	case ETH_MMCTGFSCCR: value = s->eth_mmctgfsccr & 0xffffffff; break;
+	case ETH_MMCTGFMSCCR: value = s->eth_mmctgfmsccr & 0xffffffff; break;
+	case ETH_MMCTGFCR: value = s->eth_mmctgfcr & 0xffffffff; break;
+	case ETH_MMCRFCECR: value = s->eth_mmcrfcecr & 0xffffffff; break;
+	case ETH_MMCRGUFCR: value = s->eth_mmcrgufcr & 0xffffffff; break;
+	case ETH_PTPTSCR: value = s->eth_ptptscr & 0x0003ff3f; break;
+	case ETH_PTPSSIR: value = s->eth_ptpssir & 0x000000ff; break;
+	case ETH_PTPTSHR: value = s->eth_ptptshr & 0xffffffff; break;
+	case ETH_PTPTSLR: value = s->eth_ptptslr & 0xffffffff; break;
+	case ETH_PTPTSHUR: value = s->eth_ptptshur & 0xffffffff; break;
+	case ETH_PTPTSLUR: value = s->eth_ptptslur & 0xffffffff; break;
+	case ETH_PTPTSAR: value = s->eth_ptptsar & 0xffffffff; break;
+	case ETH_PTPTTHR: value = s->eth_ptptthr & 0xffffffff; break;
+	case ETH_PTPTTLR: value = s->eth_ptpttlr & 0xffffffff; break;
+	case ETH_PTPTSSR: value = s->eth_ptptssr & 0x00000003; break;
+	case ETH_PTPPPSCR: value = s->eth_ptpppscr & 0x0000000f; break;
+	case ETH_DMABMR: value = s->eth_dmabmr & 0x07ffffff; break;
+	case ETH_DMATPDR: value = s->eth_dmatpdr & 0xffffffff; break;
+	case ETH_DMARPDR: value = s->eth_dmarpdr & 0xffffffff; break;
+	case ETH_DMARDLAR: value = s->eth_dmardlar & 0xffffffff; break;
+	case ETH_DMATDLAR: value = s->eth_dmatdlar & 0xffffffff; break;
+	case ETH_DMASR: value = s->eth_dmasr & 0x3bffe7ff; break;
+	case ETH_DMAOMR: value = s->eth_dmaomr & 0x0731e0de; break;
+	case ETH_DMAIER: value = s->eth_dmaier & 0x0001e7ff; break;
+	case ETH_DMAMFBOCR: value = s->eth_dmamfbocr & 0x1fffffff; break;
+	case ETH_DMARSWTR: value = s->eth_dmarswtr & 0x000000ff; break;
+	case ETH_DMACHTDR: value = s->eth_dmachtdr & 0xffffffff; break;
+	case ETH_DMACHRDR: value = s->eth_dmachrdr & 0xffffffff; break;
+	case ETH_DMACHTBAR: value = s->eth_dmachtbar & 0xffffffff; break;
+	case ETH_DMACHRBAR: value = s->eth_dmachrbar & 0xffffffff; break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, addr);
         return 0;
     }
 
-    return 0;
+	DB_PRINT(" 0x%04x <= %s (0x%04"HWADDR_PRIx")\n", value, stm32f4xx_enet_reg_to_string( addr ), addr);
+
+    return value;
 }
 
 static void stm32f4xx_enet_write(void *opaque, hwaddr addr,
@@ -331,8 +553,10 @@ static void stm32f4xx_enet_write(void *opaque, hwaddr addr,
 {
     STM32F4XXEnetState *s = opaque;
     uint32_t value = val64;
+    //uint8_t phy_addr;
+    uint8_t mii_addr;
 
-    DB_PRINT("0x%x, 0x%"HWADDR_PRIx"\n", value, addr);
+    DB_PRINT("0x%04x => %s (0x%04"HWADDR_PRIx")\n", value, stm32f4xx_enet_reg_to_string( addr ), addr);
 
     // stm32f4xx_enet_send(s);
 
@@ -341,8 +565,23 @@ static void stm32f4xx_enet_write(void *opaque, hwaddr addr,
 	case ETH_MACFFR: s->eth_macffr = value & 0x800007ff; break;
 	case ETH_MACHTHR: s->eth_machthr = value & 0xffffffff; break;
 	case ETH_MACHTLR: s->eth_machtlr = value & 0xffffffff; break;
-	case ETH_MACMIIAR: s->eth_macmiiar = value & 0x0000ffdf; break;
-	case ETH_MACMIIDR: s->eth_macmiidr = value & 0x0000ffff; break;
+	case ETH_MACMIIAR:
+		if (!(value & 0x2)) {
+			// set up data register for subsequent read operation
+			mii_addr = ( value >> 6 ) & 0x1f;
+			s->eth_macmiidr = stm32f4xx_mii_read( s, mii_addr );
+		}
+		// clear busy bit to indicate completion
+		value &= ~0x1;
+		s->eth_macmiiar = value & 0x0000ffff;
+		break;
+	case ETH_MACMIIDR:
+		value &= 0xffff;
+		// assume previous mii_addr in eth_macmiiar is valid
+		mii_addr = ( s->eth_macmiiar >> 6 ) & 0x1f;
+		stm32f4xx_mii_write( s, mii_addr, value );
+		s->eth_macmiidr = value & 0x0000ffff;
+		break;
 	case ETH_MACFCR: s->eth_macfcr = value & 0xffff00bf; break;
 	case ETH_MACVLANTR: s->eth_macvlantr = value & 0x0001ffff; break;
 	case ETH_MACRWUFFR: s->eth_macrwuffr = value & 0xffffffff; break;
@@ -350,14 +589,24 @@ static void stm32f4xx_enet_write(void *opaque, hwaddr addr,
 	case ETH_MACDBGR: s->eth_macdbgr = value & 0x00000000; break;
 	case ETH_MACSR: s->eth_macsr = value & 0x00000000; break;
 	case ETH_MACIMR: s->eth_macimr = value & 0x00000208; break;
-	case ETH_MACA0HR: s->eth_maca0hr = value & 0x00000ffff; break;
-	case ETH_MACA0LR: s->eth_maca0lr = value & 0xffffffff; break;
-	case ETH_MACA1HR: s->eth_maca1hr = value & 0xff00ffffff; break;
-	case ETH_MACA1LR: s->eth_maca1lr = value & 0xffffffff; break;
-	case ETH_MACA2HR: s->eth_maca2hr = value & 0xff00ffffff; break;
-	case ETH_MACA2LR: s->eth_maca2lr = value & 0xffffffff; break;
-	case ETH_MACA3HR: s->eth_maca3hr = value & 0xff00ffffff; break;
-	case ETH_MACA3LR: s->eth_maca3lr = value & 0xffffffff; break;
+	case ETH_MACA0HR:
+		//s->eth_maca0hr = value & 0x00000ffff;
+		s->conf.macaddr.a[ 5 ] = ( value >> 8 ) & 0xff;
+		s->conf.macaddr.a[ 4 ] = ( value >> 0 ) & 0xff;
+		break;
+	case ETH_MACA0LR:
+		//s->eth_maca0lr = value & 0xffffffff;
+		s->conf.macaddr.a[ 3 ] = ( value >> 24 ) & 0xff;
+		s->conf.macaddr.a[ 2 ] = ( value >> 16 ) & 0xff;
+		s->conf.macaddr.a[ 1 ] = ( value >> 8 ) & 0xff;
+		s->conf.macaddr.a[ 0 ] = ( value >> 0 ) & 0xff;
+		break;
+//	case ETH_MACA1HR: s->eth_maca1hr = value & 0xff00ffffff; break;
+//	case ETH_MACA1LR: s->eth_maca1lr = value & 0xffffffff; break;
+//	case ETH_MACA2HR: s->eth_maca2hr = value & 0xff00ffffff; break;
+//	case ETH_MACA2LR: s->eth_maca2lr = value & 0xffffffff; break;
+//	case ETH_MACA3HR: s->eth_maca3hr = value & 0xff00ffffff; break;
+//	case ETH_MACA3LR: s->eth_maca3lr = value & 0xffffffff; break;
 	case ETH_MMCCR: s->eth_mmccr = value & 0x0000003f; break;
 	case ETH_MMCRIR: s->eth_mmcrir = value & 0x00000000; break;
 	case ETH_MMCTIR: s->eth_mmctir = value & 0x00000000; break;
@@ -409,6 +658,7 @@ static NetClientInfo stm32f4xx_enet_net_info = {
     .type = NET_CLIENT_DRIVER_NIC,
     .size = sizeof(NICState),
     .receive = stm32f4xx_enet_receive,
+	.link_status_changed = stm32f4xx_enet_set_link_status,
 };
 
 static int stm32f4xx_enet_init(SysBusDevice *sbd)
@@ -425,6 +675,7 @@ static int stm32f4xx_enet_init(SysBusDevice *sbd)
     s->nic = qemu_new_nic(&stm32f4xx_enet_net_info, &s->conf,
                           object_get_typename(OBJECT(dev)), dev->id, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
+    DB_PRINT( "%s\n", qemu_get_queue(s->nic)->info_str );
 
     stm32f4xx_enet_reset(s);
     return 0;

@@ -28,6 +28,7 @@
 
 #include "hw/sysbus.h"
 #include "hw/hw.h"
+#include "hw/net/mii.h"
 #include "net/net.h"
 
 #define ETH_MACCR 0x0000
@@ -157,6 +158,11 @@ typedef struct {
 
     NICState *nic;
     NICConf conf;
+
+    // limit to 1 phy for now
+    // mii regs for phy[0]
+    uint16_t mii[ MII_NSR ];
+    bool link_ok;
 
     qemu_irq irq;
 } STM32F4XXEnetState;
