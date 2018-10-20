@@ -409,7 +409,7 @@ static void pl181_write(void *opaque, hwaddr offset,
         s->datatimer = value;
         break;
     case 0x28: /* DataLength */
-        s->datalength = value & 0xffff;
+        s->datalength = value & 0xffffffff;
         break;
     case 0x2c: /* DataCtrl */
         s->datactrl = value & 0xff;
